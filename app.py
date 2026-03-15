@@ -3,6 +3,11 @@ import pandas as pd
 import requests
 from datetime import datetime
 import altair as alt
+import zipfile
+import io
+import tempfile
+import os
+import sqlite3
 
 # --- Configuration ---
 st.set_page_config(page_title="Actual Budget Dashboard", layout="wide")
@@ -76,6 +81,53 @@ def fetch_investment_balances():
                 
     return balances
 
+@st.cache_data(ttl=300)
+def fetch_underbudgeted_amounts():
+    # Calculate the YYYYMM format for this month, next month, and the month after
+    now = datetime.now()
+    target_months = [(now + pd.DateOffset(months=i)) for i in range(3)]
+    months_str = [m.strftime('%Y%m') for m in target_months]
+    
+    results = {m: 0.0 for m in months_str}
+    
+    export_url = f"{API_URL}/export"
+    try:
+        # Download the zip file
+        resp = requests.get(export_url, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        
+        # Read the db.sqlite file out of the zip archive in memory
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+            db_bytes = z.read('db.sqlite')
+            
+        # Write it to a temporary file so the sqlite3 library can query it
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.sqlite') as tmp:
+            tmp.write(db_bytes)
+            tmp_path = tmp.name
+            
+        # Execute your specific query against the DB for each target month
+        try:
+            conn = sqlite3.connect(tmp_path)
+            cursor = conn.cursor()
+            for m in months_str:
+                cursor.execute("""
+                    SELECT COALESCE(SUM(zero_budgets.goal - zero_budgets.amount), 0) / 100.0
+                    FROM zero_budgets
+                    INNER JOIN categories ON categories.id = zero_budgets.category
+                    WHERE month = ?
+                      AND amount <> goal;
+                """, (m,))
+                row = cursor.fetchone()
+                results[m] = row[0] if row and row[0] else 0.0
+        finally:
+            conn.close()
+            os.remove(tmp_path) # Clean up the temp file
+            
+    except Exception as e:
+        st.warning(f"Failed to fetch underbudgeted amounts: {e}")
+        
+    return results, target_months
+
 # --- UI Rendering ---
 st.title("💸 Actual Budget Dashboard")
 
@@ -91,15 +143,58 @@ selected_month = st.sidebar.selectbox("Select Month", month_options)
 df_filtered = df[df['date'].dt.strftime('%Y-%m') == selected_month]
 
 # --- Dashboard Layout ---
+st.subheader("Monthly Overview")
 total_spent = df_filtered['amount'].sum()
-st.metric(label=f"Total Expenses for {selected_month}", value=f"${total_spent:,.2f}")
+underbudget_data, target_months = fetch_underbudgeted_amounts()
+
+# Top row metrics (4 columns)
+m_cols = st.columns(4)
+m_cols[0].metric(label=f"Total Expenses ({selected_month})", value=f"${total_spent:,.2f}")
+
+# Render the 3 future underbudgeted months
+for i, m_obj in enumerate(target_months):
+    m_str = m_obj.strftime('%Y%m')
+    m_label = m_obj.strftime('%b %Y') # e.g., "Mar 2026"
+    val = underbudget_data.get(m_str, 0.0)
+    
+    if val > 0:
+        # If underfunded, show the amount and a red "Action Required" indicator
+        m_cols[i+1].metric(
+            label=f"Underfunded ({m_label})", 
+            value=f"${val:,.2f}",
+            delta="Action Required",
+            delta_color="inverse" # 'inverse' tells Streamlit to make positive delta strings red
+        )
+    else:
+        # If fully funded, show zero and a green "Fully Funded" indicator
+        m_cols[i+1].metric(
+            label=f"Underfunded ({m_label})", 
+            value=f"${val:,.2f}",
+            delta="Fully Funded",
+            delta_color="normal" # 'normal' tells Streamlit to make positive delta strings green
+        )
+
+st.markdown("---")
 
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Spending by Category")
-    cat_summary = df_filtered.groupby('Category_Name')['amount'].sum().sort_values(ascending=False)
-    st.bar_chart(cat_summary, horizontal=True)
+    
+    # Group and sum, resetting the index so Altair can read the columns
+    cat_summary = df_filtered.groupby('Category_Name')['amount'].sum().reset_index()
+    
+    # Use Altair to explicitly sort by amount descending (sort='-x')
+    bar_chart = alt.Chart(cat_summary).mark_bar().encode(
+        x=alt.X('amount:Q', title='Amount', axis=alt.Axis(format='$,.0f')),
+        y=alt.Y('Category_Name:N', sort='-x', title=''),
+        tooltip=[
+            alt.Tooltip('Category_Name:N', title='Category'), 
+            alt.Tooltip('amount:Q', format='$,.2f', title='Total Spent')
+        ]
+    )
+    
+    st.altair_chart(bar_chart, width="stretch")
 
 with col2:
     st.subheader("Transaction Log")
