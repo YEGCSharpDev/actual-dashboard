@@ -1,0 +1,79 @@
+# ==============================================================================
+# ACTUAL BUDGET STREAMLIT DASHBOARD (PARAMETERIZED)
+# ==============================================================================
+# 
+#
+# The Docker image hosted on Docker Hub is entirely stateless and secure. 
+# You MUST create a local configuration file before starting the container.
+#
+# STEP 1: In your deployment directory (e.g., /mnt/Tank/apps/actual-dashboard/), 
+#         create a hidden folder named `.streamlit`:
+#         
+#         mkdir -p .streamlit
+#
+# STEP 2: Create a file named `secrets.toml` inside that new folder:
+#
+#         nano .streamlit/secrets.toml
+#
+# STEP 3: Paste the following TOML template into the file and update the 
+#         API keys/URLs. This file controls all dashboard math and logic:
+#
+# ----------- COPY BELOW THIS LINE -----------
+# ACTUAL_URL = "http://actual-REST-URI/v1/budgets/YOUR_BUDGET_ID"
+# ACTUAL_API_KEY = "API_KEY"
+#
+# [categories]
+# tfsa_tracking = ["⛱️🍸ATB TFSA", "⛱️🍸Wealthsimple TFSA"]
+#
+# [resp]
+# horizon_years = 10
+# default_return_pct = 4.0
+# monthly_contribution = 208.0
+#
+# [rrsp]
+# horizon_years = 30
+# default_return_pct = 8.0
+# annual_contribution = 860.0
+#
+# [tfsa]
+# horizon_years = 30
+# ytd_limit = 16430.06
+# annual_room = 7000.0
+#
+# [tfsa.base]
+# identifier = "ATB"
+# default_return_pct = 4.0
+# monthly_contribution = 400.0
+#
+# [tfsa.catchup]
+# identifier = "WEALTHSIMPLE"
+# default_return_pct = 8.0
+# catchup_year_contribution = 12000.0
+# ----------- COPY ABOVE THIS LINE -----------
+#
+# STEP 4: Save the file. Your directory structure MUST look exactly like this:
+#
+#         /mnt/Tank/apps/actual-dashboard/
+#         ├── docker-compose.yml
+#         └── .streamlit/
+#             └── secrets.toml
+#
+# Once the secrets file is in place, Docker will securely map it into the 
+# container at runtime. You are now safe to click "Start" in Dockge!
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  actual-dashboard:
+    image: preface8675/actual-dashboard:latest  
+    container_name: actual-dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      # Maps the local configuration directly into the container as read-only (ro)
+      - ./.streamlit:/app/.streamlit:ro
+    environment:
+      # Ensures the Streamlit transaction logs and charts align with your local time
+      - TZ=America/Edmonton
