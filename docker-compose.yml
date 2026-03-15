@@ -2,20 +2,11 @@
 # ACTUAL BUDGET STREAMLIT DASHBOARD (PARAMETERIZED)
 # ==============================================================================
 # 
+# STEP 0: This container needs https://github.com/jhonderson/actual-http-api running for REST API calls.
 #
-# The Docker image hosted on Docker Hub is entirely stateless and secure. 
-# You MUST create a local configuration file before starting the container.
+# STEP 1: In the mounted directory create secrets.toml file
 #
-# STEP 1: In your deployment directory (e.g., /mnt/Tank/apps/actual-dashboard/), 
-#         create a hidden folder named `.streamlit`:
-#         
-#         mkdir -p .streamlit
-#
-# STEP 2: Create a file named `secrets.toml` inside that new folder:
-#
-#         nano .streamlit/secrets.toml
-#
-# STEP 3: Paste the following TOML template into the file and update the 
+# STEP 2: Paste the following TOML template into the file and update the 
 #         API keys/URLs. This file controls all dashboard math and logic:
 #
 # ----------- COPY BELOW THIS LINE -----------
@@ -26,11 +17,13 @@
 # tfsa_tracking = ["⛱️🍸ATB TFSA", "⛱️🍸Wealthsimple TFSA"]
 #
 # [resp]
+# identifier = "RESP"
 # horizon_years = 10
 # default_return_pct = 4.0
 # monthly_contribution = xxx.0
 #
 # [rrsp]
+# identifier = "RRSP"
 # horizon_years = 30
 # default_return_pct = 8.0
 # annual_contribution = xxx.0
@@ -51,7 +44,6 @@
 # catchup_year_contribution = 0.0
 # ----------- COPY ABOVE THIS LINE -----------
 #
-# STEP 4: Save the file as secrets.toml in the root of the mapped folder.
 #
 # ==============================================================================
 
