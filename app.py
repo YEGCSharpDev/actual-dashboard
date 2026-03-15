@@ -105,7 +105,7 @@ with col2:
     st.subheader("Transaction Log")
     display_df = df_filtered[['date', 'Payee_Name', 'Category_Name', 'amount']].sort_values(by='date', ascending=False)
     display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(display_df, width="stretch", hide_index=True)
 
 # --- TFSA Contributions (YTD) ---
 st.markdown("---")
@@ -190,7 +190,7 @@ def render_forecast_section(title, account_dict, years_to_track, return_rate, an
     text = base.mark_text(align='left', baseline='middle', dx=8, dy=-10, fontSize=12, fontWeight='bold').encode(text='Label:N')
     chart = (line + text).properties(height=350).interactive()
     
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
 
 # --- RESP Section ---
 resp_cfg = st.secrets["resp"]
