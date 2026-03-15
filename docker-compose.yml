@@ -28,38 +28,31 @@
 # [resp]
 # horizon_years = 10
 # default_return_pct = 4.0
-# monthly_contribution = 208.0
+# monthly_contribution = xxx.0
 #
 # [rrsp]
 # horizon_years = 30
 # default_return_pct = 8.0
-# annual_contribution = 860.0
+# annual_contribution = xxx.0
 #
 # [tfsa]
 # horizon_years = 30
-# ytd_limit = 16430.06
+# ytd_limit = 7000.0
 # annual_room = 7000.0
 #
 # [tfsa.base]
-# identifier = "ATB"
+# identifier = "xxxx"
 # default_return_pct = 4.0
 # monthly_contribution = 400.0
 #
 # [tfsa.catchup]
-# identifier = "WEALTHSIMPLE"
+# identifier = "xxxx"
 # default_return_pct = 8.0
-# catchup_year_contribution = 12000.0
+# catchup_year_contribution = 0.0
 # ----------- COPY ABOVE THIS LINE -----------
 #
-# STEP 4: Save the file. Your directory structure MUST look exactly like this:
+# STEP 4: Save the file as secrets.toml in the root of the mapped folder.
 #
-#         /mnt/Tank/apps/actual-dashboard/
-#         ├── docker-compose.yml
-#         └── .streamlit/
-#             └── secrets.toml
-#
-# Once the secrets file is in place, Docker will securely map it into the 
-# container at runtime. You are now safe to click "Start" in Dockge!
 # ==============================================================================
 
 version: '3.8'
@@ -72,8 +65,8 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      # Maps the local configuration directly into the container as read-only (ro)
-      - ./.streamlit:/app/.streamlit:ro
+      - /mnt/Tank/AppData/config/Actual-Dashboard:/app/.streamlit:ro
     environment:
-      # Ensures the Streamlit transaction logs and charts align with your local time
+      - PUID=568
+      - PGID=3002
       - TZ=America/Edmonton
