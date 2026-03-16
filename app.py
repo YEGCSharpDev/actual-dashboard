@@ -23,9 +23,9 @@ def fetch_actual_data():
     accounts_res = requests.get(f"{API_URL}/accounts", headers=HEADERS).json()['data']
     active_accounts = [acc['id'] for acc in accounts_res if not acc.get('offbudget') and not acc.get('closed')]
     
+    current_year = datetime.now().year  # moved out of loop; same value every iteration
     raw_txns = []
     for acc_id in active_accounts:
-        current_year = datetime.now().year
         txns = requests.get(f"{API_URL}/accounts/{acc_id}/transactions?since_date={current_year}-01-01", headers=HEADERS).json().get('data', [])
         
         for txn in txns:
@@ -50,10 +50,10 @@ def fetch_actual_data():
     df_merged['Payee_Name'] = df_merged['Payee_Name'].fillna(df_merged['imported_payee']).fillna("Unknown")
     df_merged['Category_Name'] = df_merged['Category_Name'].fillna("Uncategorized")
     
-    # Actual stores amounts as negative integer millicents; converting standard outflow to positive dollars
+    # Actual stores amounts as negative integer cents; flip sign and scale to dollars
     df_merged['amount'] = (df_merged['amount'] / -100.0)
     
-    # Notice we removed the income filter here so we get EVERYTHING!
+    # income/expense split happens downstream after the month filter
     df_clean = df_merged[
         (df_merged['category'].notna()) & 
         (df_merged['tombstone'] == False)
@@ -106,8 +106,7 @@ def fetch_underbudgeted_amounts():
             tmp.write(db_bytes)
             tmp_path = tmp.name
 
-        # Initialize conn to None so the finally block is safe even if connect() fails
-        conn = None
+        conn = None  # guard for finally block if connect() raises
         try:
             conn = sqlite3.connect(tmp_path)
             cursor = conn.cursor()
@@ -119,8 +118,7 @@ def fetch_underbudgeted_amounts():
                     WHERE month = ?
                       AND amount < goal;
                 """, (m,))
-                # Use amount < goal (not <>) to exclude over-funded categories,
-                # which would otherwise produce negative values that reduce the total
+                # amount < goal excludes over-funded categories; <> would let them offset the sum
                 row = cursor.fetchone()
                 results[m] = row[0] if row and row[0] else 0.0
         finally:
@@ -144,11 +142,11 @@ st.sidebar.header("Filters")
 month_options = sorted(df['date'].dt.strftime('%Y-%m').unique(), reverse=True)
 selected_month = st.sidebar.selectbox("Select Month", month_options)
 
-# Split data into Income vs Expenses for the selected month
 df_filtered = df[df['date'].dt.strftime('%Y-%m') == selected_month]
 
 df_income = df_filtered[df_filtered['is_income'] == True].copy()
-df_income['amount'] = df_income['amount'] * -1 # Revert the negative math to make income positive
+# Income was flipped to negative by the global /−100 conversion; restore to positive
+df_income['amount'] = df_income['amount'] * -1
 
 df_expenses = df_filtered[df_filtered['is_income'] != True].copy()
 
@@ -159,46 +157,51 @@ total_income = df_income['amount'].sum()
 total_spent = df_expenses['amount'].sum()
 net_income = total_income - total_spent
 
-# 1. Top Line: High Level Metrics
 col_inc, col_exp, col_net = st.columns(3)
 col_inc.metric("Income", f"${total_income:,.2f}")
 col_exp.metric("Expenses", f"${total_spent:,.2f}")
 
-# Fix the Net Income Delta parsing by ensuring the negative sign is the very first character
-delta_str = f"${net_income:,.2f}" if net_income >= 0 else f"-${abs(net_income):,.2f}"
-col_net.metric("Net Income", f"${net_income:,.2f}", delta=delta_str, delta_color="normal")
+# Savings rate as delta gives more signal than restating net income
+if total_income > 0:
+    savings_rate = (net_income / total_income) * 100
+    savings_delta = f"{savings_rate:.1f}% savings rate"
+else:
+    savings_delta = None
+col_net.metric("Net Income", f"${net_income:,.2f}", delta=savings_delta, delta_color="normal")
 
-# 2. Second Line: Separate Income and Expense Bars
-# Calculate relative widths so they scale against each other visually
+# Scale bars relative to each other so the larger value always fills the track
 max_val = max(total_income, total_spent)
 if max_val == 0:
-    max_val = 1.0 # Prevent division by zero
+    max_val = 1.0
 
 inc_pct = (total_income / max_val) * 100
 exp_pct = (total_spent / max_val) * 100
 
+# When a bar is too narrow to contain its label, render the label outside the fill
+LABEL_THRESHOLD = 20
+
+def bar_html(pct, color_solid, color_bg, color_border, label, amount_str):
+    label_inside = pct > LABEL_THRESHOLD
+    fill_content = f'<span style="color: white; font-weight: bold; font-size: 13px; padding: 0 10px;">{amount_str}</span>' if label_inside else ''
+    outside_label = '' if label_inside else f'<span style="margin-left: 8px; font-weight: bold; font-size: 13px; color: {color_solid};">{amount_str}</span>'
+    return f"""
+    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+        <div style="width: 85px; font-weight: bold; color: {color_solid}; font-size: 14px;">{label}</div>
+        <div style="flex-grow: 1; background-color: {color_bg}; border-radius: 6px; height: 28px; border: 1px solid {color_border}; display: flex; align-items: center;">
+            <div style="background-color: {color_solid}; width: {pct}%; height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end;">
+                {fill_content}
+            </div>
+            {outside_label}
+        </div>
+    </div>"""
+
 st.markdown(f"""
 <div style="margin-bottom: 25px;">
-    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-        <div style="width: 85px; font-weight: bold; color: #28a745; font-size: 14px;">Income</div>
-        <div style="flex-grow: 1; background-color: rgba(40, 167, 69, 0.15); border-radius: 6px; height: 28px; border: 1px solid rgba(40, 167, 69, 0.3);">
-            <div style="background-color: #28a745; width: {inc_pct}%; height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: white; font-weight: bold; font-size: 13px; min-width: max-content; padding-left: 10px;">
-                ${total_income:,.2f}
-            </div>
-        </div>
-    </div>
-    <div style="display: flex; align-items: center;">
-        <div style="width: 85px; font-weight: bold; color: #dc3545; font-size: 14px;">Expenses</div>
-        <div style="flex-grow: 1; background-color: rgba(220, 53, 69, 0.15); border-radius: 6px; height: 28px; border: 1px solid rgba(220, 53, 69, 0.3);">
-            <div style="background-color: #dc3545; width: {exp_pct}%; height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: white; font-weight: bold; font-size: 13px; min-width: max-content; padding-left: 10px;">
-                ${total_spent:,.2f}
-            </div>
-        </div>
-    </div>
+    {bar_html(inc_pct, '#28a745', 'rgba(40,167,69,0.15)', 'rgba(40,167,69,0.3)', 'Income', f'${total_income:,.2f}')}
+    {bar_html(exp_pct, '#dc3545', 'rgba(220,53,69,0.15)', 'rgba(220,53,69,0.3)', 'Expenses', f'${total_spent:,.2f}')}
 </div>
 """, unsafe_allow_html=True)
 
-# 3. Third Line: Envelope Health Checks
 st.subheader("Future Envelope Health")
 underbudget_data, target_months = fetch_underbudgeted_amounts()
 m_cols = st.columns(3)
@@ -229,8 +232,6 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Spending by Category")
-    
-    # Make sure we chart only df_expenses so income doesn't show up here!
     cat_summary = df_expenses.groupby('Category_Name')['amount'].sum().reset_index()
     
     bar_chart = alt.Chart(cat_summary).mark_bar().encode(
@@ -246,8 +247,8 @@ with col1:
 
 with col2:
     st.subheader("Transaction Log")
-    # Only show expenses in the log
-    display_df = df_expenses[['date', 'Payee_Name', 'Category_Name', 'amount']].sort_values(by='date', ascending=False)
+    display_df = df_expenses[['date', 'Payee_Name', 'Category_Name', 'amount']].copy()
+    display_df = display_df.sort_values(by='date', ascending=False)
     display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
     st.dataframe(display_df, width="stretch", hide_index=True)
 
@@ -257,7 +258,7 @@ st.header("📈 TFSA Contributions (YTD)")
 
 tfsa_cats = st.secrets["categories"]["tfsa_tracking"]
 
-# Pull from the master 'df' (which is YTD), ignoring the month filter applied to df_expenses
+# df is unfiltered YTD; df_expenses is scoped to the selected month
 df_ytd_expenses = df[df['is_income'] != True]
 df_tfsa = df_ytd_expenses[df_ytd_expenses['Category_Name'].isin(tfsa_cats)].copy()
 
@@ -270,19 +271,32 @@ if not df_tfsa.empty:
     
     TFSA_LIMIT = float(st.secrets["tfsa"]["ytd_limit"])
     progress_pct = min(tfsa_total / TFSA_LIMIT, 1.0)
+    remaining = max(TFSA_LIMIT - tfsa_total, 0.0)
 
     cols = st.columns(len(tfsa_cats) + 1)
     for i, (cat, total) in enumerate(cat_totals.items()):
         cols[i].metric(cat, f"${total:,.2f}")
     cols[-1].metric("Total Contributed", f"${tfsa_total:,.2f}", f"{(tfsa_total/TFSA_LIMIT)*100:.1f}% of ${TFSA_LIMIT:,.2f} Limit")
 
-    st.progress(progress_pct)
+    st.progress(progress_pct, text=f"${remaining:,.2f} remaining of ${TFSA_LIMIT:,.2f} annual limit")
     
     st.subheader("Contribution Velocity")
     daily_tfsa = df_tfsa.groupby(['date', 'Category_Name'])['amount'].sum().reset_index()
-    chart_data = daily_tfsa.pivot(index='date', columns='Category_Name', values='amount').fillna(0)
-    chart_data = chart_data.cumsum()
-    st.area_chart(chart_data)
+    daily_tfsa = daily_tfsa.sort_values('date')
+    daily_tfsa['Cumulative'] = daily_tfsa.groupby('Category_Name')['amount'].cumsum()
+
+    area_chart = alt.Chart(daily_tfsa).mark_area(opacity=0.7).encode(
+        x=alt.X('date:T', title='Date'),
+        y=alt.Y('Cumulative:Q', axis=alt.Axis(format='$,.0f', title='Cumulative Contribution')),
+        color=alt.Color('Category_Name:N', legend=alt.Legend(orient='bottom', title=None)),
+        tooltip=[
+            alt.Tooltip('date:T', title='Date'),
+            alt.Tooltip('Category_Name:N', title='Category'),
+            alt.Tooltip('Cumulative:Q', format='$,.2f', title='Cumulative')
+        ]
+    ).properties(height=300).interactive()
+
+    st.altair_chart(area_chart, width="stretch")
 else:
     st.info("No TFSA contributions found for this year yet.")
 
@@ -404,7 +418,6 @@ with tab_tfsa:
         WS_CATCHUP_YEAR_ANNUAL = float(tfsa_cfg["catchup"]["catchup_year_contribution"])
         WS_FUTURE_ANNUAL = ANNUAL_TFSA_ROOM - BASE_TFSA_ANNUAL
         
-        base_match = tfsa_cfg["base"]["identifier"].upper()
         catchup_match = tfsa_cfg["catchup"]["identifier"].upper()
         
         for name, initial_balance in tfsa_balances.items():
@@ -430,6 +443,7 @@ with tab_tfsa:
                     "Label": f"${current_balance:,.0f}" if is_milestone else ""
                 })
                 
+                # catchup account gets a higher first-year contribution while clearing its backlog
                 if is_catchup:
                     contrib = WS_CATCHUP_YEAR_ANNUAL if year_offset == 0 else WS_FUTURE_ANNUAL
                 else:
