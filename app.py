@@ -50,17 +50,17 @@ def fetch_actual_data():
     df_merged['Payee_Name'] = df_merged['Payee_Name'].fillna(df_merged['imported_payee']).fillna("Unknown")
     df_merged['Category_Name'] = df_merged['Category_Name'].fillna("Uncategorized")
     
-    # Actual stores amounts as negative integer millicents; convert to positive dollars
+    # Actual stores amounts as negative integer millicents; converting standard outflow to positive dollars
     df_merged['amount'] = (df_merged['amount'] / -100.0)
     
-    df_expenses = df_merged[
-        (df_merged['is_income'] != True) & 
+    # Notice we removed the income filter here so we get EVERYTHING!
+    df_clean = df_merged[
         (df_merged['category'].notna()) & 
         (df_merged['tombstone'] == False)
     ].copy()
     
-    df_expenses['date'] = pd.to_datetime(df_expenses['date'])
-    return df_expenses
+    df_clean['date'] = pd.to_datetime(df_clean['date'])
+    return df_clean
 
 @st.cache_data(ttl=300)
 def fetch_investment_balances():
@@ -144,32 +144,79 @@ st.sidebar.header("Filters")
 month_options = sorted(df['date'].dt.strftime('%Y-%m').unique(), reverse=True)
 selected_month = st.sidebar.selectbox("Select Month", month_options)
 
-# Apply Filter
+# Split data into Income vs Expenses for the selected month
 df_filtered = df[df['date'].dt.strftime('%Y-%m') == selected_month]
+
+df_income = df_filtered[df_filtered['is_income'] == True].copy()
+df_income['amount'] = df_income['amount'] * -1 # Revert the negative math to make income positive
+
+df_expenses = df_filtered[df_filtered['is_income'] != True].copy()
 
 # --- Dashboard Layout ---
 st.subheader("Monthly Overview")
-total_spent = df_filtered['amount'].sum()
+
+total_income = df_income['amount'].sum()
+total_spent = df_expenses['amount'].sum()
+net_income = total_income - total_spent
+
+# 1. Top Line: High Level Metrics
+col_inc, col_exp, col_net = st.columns(3)
+col_inc.metric("Income", f"${total_income:,.2f}")
+col_exp.metric("Expenses", f"${total_spent:,.2f}")
+
+# Fix the Net Income Delta parsing by ensuring the negative sign is the very first character
+delta_str = f"${net_income:,.2f}" if net_income >= 0 else f"-${abs(net_income):,.2f}"
+col_net.metric("Net Income", f"${net_income:,.2f}", delta=delta_str, delta_color="normal")
+
+# 2. Second Line: Separate Income and Expense Bars
+# Calculate relative widths so they scale against each other visually
+max_val = max(total_income, total_spent)
+if max_val == 0:
+    max_val = 1.0 # Prevent division by zero
+
+inc_pct = (total_income / max_val) * 100
+exp_pct = (total_spent / max_val) * 100
+
+st.markdown(f"""
+<div style="margin-bottom: 25px;">
+    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+        <div style="width: 85px; font-weight: bold; color: #28a745; font-size: 14px;">Income</div>
+        <div style="flex-grow: 1; background-color: rgba(40, 167, 69, 0.15); border-radius: 6px; height: 28px; border: 1px solid rgba(40, 167, 69, 0.3);">
+            <div style="background-color: #28a745; width: {inc_pct}%; height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: white; font-weight: bold; font-size: 13px; min-width: max-content; padding-left: 10px;">
+                ${total_income:,.2f}
+            </div>
+        </div>
+    </div>
+    <div style="display: flex; align-items: center;">
+        <div style="width: 85px; font-weight: bold; color: #dc3545; font-size: 14px;">Expenses</div>
+        <div style="flex-grow: 1; background-color: rgba(220, 53, 69, 0.15); border-radius: 6px; height: 28px; border: 1px solid rgba(220, 53, 69, 0.3);">
+            <div style="background-color: #dc3545; width: {exp_pct}%; height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: white; font-weight: bold; font-size: 13px; min-width: max-content; padding-left: 10px;">
+                ${total_spent:,.2f}
+            </div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# 3. Third Line: Envelope Health Checks
+st.subheader("Future Envelope Health")
 underbudget_data, target_months = fetch_underbudgeted_amounts()
+m_cols = st.columns(3)
 
-m_cols = st.columns(4)
-m_cols[0].metric(label=f"Total Expenses ({selected_month})", value=f"${total_spent:,.2f}")
-
-# Render the 3 future underbudgeted months
 for i, m_obj in enumerate(target_months):
     m_str = m_obj.strftime('%Y%m')
     m_label = m_obj.strftime('%b %Y') 
     val = underbudget_data.get(m_str, 0.0)
     
     if val > 0:
-        m_cols[i+1].metric(
+        m_cols[i].metric(
             label=f"Underfunded ({m_label})", 
             value=f"${val:,.2f}",
             delta="Action Required",
             delta_color="inverse" 
         )
     else:
-        m_cols[i+1].metric(
+        m_cols[i].metric(
             label=f"Underfunded ({m_label})", 
             value=f"${val:,.2f}",
             delta="Fully Funded",
@@ -183,7 +230,8 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("Spending by Category")
     
-    cat_summary = df_filtered.groupby('Category_Name')['amount'].sum().reset_index()
+    # Make sure we chart only df_expenses so income doesn't show up here!
+    cat_summary = df_expenses.groupby('Category_Name')['amount'].sum().reset_index()
     
     bar_chart = alt.Chart(cat_summary).mark_bar().encode(
         x=alt.X('amount:Q', title='Amount', axis=alt.Axis(format='$,.0f')),
@@ -198,7 +246,8 @@ with col1:
 
 with col2:
     st.subheader("Transaction Log")
-    display_df = df_filtered[['date', 'Payee_Name', 'Category_Name', 'amount']].sort_values(by='date', ascending=False)
+    # Only show expenses in the log
+    display_df = df_expenses[['date', 'Payee_Name', 'Category_Name', 'amount']].sort_values(by='date', ascending=False)
     display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
     st.dataframe(display_df, width="stretch", hide_index=True)
 
@@ -207,7 +256,10 @@ st.markdown("---")
 st.header("📈 TFSA Contributions (YTD)")
 
 tfsa_cats = st.secrets["categories"]["tfsa_tracking"]
-df_tfsa = df[df['Category_Name'].isin(tfsa_cats)].copy()
+
+# Pull from the master 'df' (which is YTD), ignoring the month filter applied to df_expenses
+df_ytd_expenses = df[df['is_income'] != True]
+df_tfsa = df_ytd_expenses[df_ytd_expenses['Category_Name'].isin(tfsa_cats)].copy()
 
 if not df_tfsa.empty:
     tfsa_total = df_tfsa['amount'].sum()
