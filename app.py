@@ -182,25 +182,24 @@ LABEL_THRESHOLD = 20
 
 def bar_html(pct, color_solid, color_bg, color_border, label, amount_str):
     label_inside = pct > LABEL_THRESHOLD
-    fill_content = f'<span style="color: white; font-weight: bold; font-size: 13px; padding: 0 10px;">{amount_str}</span>' if label_inside else ''
-    outside_label = '' if label_inside else f'<span style="margin-left: 8px; font-weight: bold; font-size: 13px; color: {color_solid};">{amount_str}</span>'
-    return f"""
-    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-        <div style="width: 85px; font-weight: bold; color: {color_solid}; font-size: 14px;">{label}</div>
-        <div style="flex-grow: 1; background-color: {color_bg}; border-radius: 6px; height: 28px; border: 1px solid {color_border}; display: flex; align-items: center;">
-            <div style="background-color: {color_solid}; width: {pct}%; height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end;">
-                {fill_content}
-            </div>
-            {outside_label}
-        </div>
-    </div>"""
+    fill_content = f'<span style="color:white;font-weight:bold;font-size:13px;padding:0 10px">{amount_str}</span>' if label_inside else ''
+    outside_label = f'<span style="margin-left:8px;font-weight:bold;font-size:13px;color:{color_solid}">{amount_str}</span>' if not label_inside else ''
+    return (
+        f'<div style="display:flex;align-items:center;margin-bottom:10px">'
+        f'<div style="width:85px;font-weight:bold;color:{color_solid};font-size:14px">{label}</div>'
+        f'<div style="flex-grow:1;background-color:{color_bg};border-radius:6px;height:28px;border:1px solid {color_border};display:flex;align-items:center">'
+        f'<div style="background-color:{color_solid};width:{pct}%;height:100%;border-radius:5px;display:flex;align-items:center;justify-content:flex-end">'
+        f'{fill_content}</div>{outside_label}</div></div>'
+    )
 
-st.markdown(f"""
-<div style="margin-bottom: 25px;">
-    {bar_html(inc_pct, '#28a745', 'rgba(40,167,69,0.15)', 'rgba(40,167,69,0.3)', 'Income', f'${total_income:,.2f}')}
-    {bar_html(exp_pct, '#dc3545', 'rgba(220,53,69,0.15)', 'rgba(220,53,69,0.3)', 'Expenses', f'${total_spent:,.2f}')}
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    f'<div style="margin-bottom:25px">'
+    f'{bar_html(inc_pct, "#28a745", "rgba(40,167,69,0.15)", "rgba(40,167,69,0.3)", "Income", f"${total_income:,.2f}")}'
+    f'{bar_html(exp_pct, "#dc3545", "rgba(220,53,69,0.15)", "rgba(220,53,69,0.3)", "Expenses", f"${total_spent:,.2f}")}'
+    f'</div>',
+    unsafe_allow_html=True
+)
+
 
 st.subheader("Future Envelope Health")
 underbudget_data, target_months = fetch_underbudgeted_amounts()
