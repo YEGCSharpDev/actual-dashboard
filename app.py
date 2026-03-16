@@ -50,6 +50,7 @@ def fetch_actual_data():
     df_merged['Payee_Name'] = df_merged['Payee_Name'].fillna(df_merged['imported_payee']).fillna("Unknown")
     df_merged['Category_Name'] = df_merged['Category_Name'].fillna("Uncategorized")
     
+    # Actual stores amounts as negative integer millicents; convert to positive dollars
     df_merged['amount'] = (df_merged['amount'] / -100.0)
     
     df_expenses = df_merged[
@@ -104,7 +105,9 @@ def fetch_underbudgeted_amounts():
         with tempfile.NamedTemporaryFile(delete=False, suffix='.sqlite') as tmp:
             tmp.write(db_bytes)
             tmp_path = tmp.name
-            
+
+        # Initialize conn to None so the finally block is safe even if connect() fails
+        conn = None
         try:
             conn = sqlite3.connect(tmp_path)
             cursor = conn.cursor()
@@ -114,12 +117,15 @@ def fetch_underbudgeted_amounts():
                     FROM zero_budgets
                     INNER JOIN categories ON categories.id = zero_budgets.category
                     WHERE month = ?
-                      AND amount <> goal;
+                      AND amount < goal;
                 """, (m,))
+                # Use amount < goal (not <>) to exclude over-funded categories,
+                # which would otherwise produce negative values that reduce the total
                 row = cursor.fetchone()
                 results[m] = row[0] if row and row[0] else 0.0
         finally:
-            conn.close()
+            if conn:
+                conn.close()
             os.remove(tmp_path) 
             
     except Exception as e:
