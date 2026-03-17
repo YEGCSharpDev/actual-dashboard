@@ -1,33 +1,80 @@
-import streamlit as st
+import ast
+import io
+import operator
+import os
+import re
+import sqlite3
+import tempfile
+import zipfile
+from datetime import datetime
+
+import altair as alt
 import pandas as pd
 import requests
-from datetime import datetime
-import altair as alt
-import zipfile
-import io
-import tempfile
-import os
-import sqlite3
+import streamlit as st
+from dateutil.relativedelta import relativedelta
 
 # --- Configuration ---
 st.set_page_config(page_title="Actual Budget Dashboard", layout="wide")
 API_URL = st.secrets["ACTUAL_URL"]
 HEADERS = {"x-api-key": st.secrets["ACTUAL_API_KEY"]}
+API_TIMEOUT = 15
+
+# --- Safe Arithmetic Parser ---
+_SAFE_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.USub: operator.neg,
+}
+
+
+def _eval_node(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_OPS:
+        return _SAFE_OPS[type(node.op)](_eval_node(node.left), _eval_node(node.right))
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_OPS:
+        return _SAFE_OPS[type(node.op)](_eval_node(node.operand))
+    raise ValueError("Unsupported expression")
+
+
+def parse_math_input(expr_str: str) -> float:
+    if not expr_str or not expr_str.strip():
+        return 0.0
+    try:
+        tree = ast.parse(expr_str.strip(), mode='eval')
+        return float(_eval_node(tree.body))
+    except Exception:
+        return 0.0
+
+
+# --- API Helper ---
+def _api_get(path: str) -> dict:
+    resp = requests.get(f"{API_URL}/{path}", headers=HEADERS, timeout=API_TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
 
 # --- Data Fetching (Cached) ---
 @st.cache_data(ttl=300)
-def fetch_actual_data():    
-    cats_res = requests.get(f"{API_URL}/categories", headers=HEADERS).json()['data']
-    payees_res = requests.get(f"{API_URL}/payees", headers=HEADERS).json()['data']
-    
-    accounts_res = requests.get(f"{API_URL}/accounts", headers=HEADERS).json()['data']
-    active_accounts = [acc['id'] for acc in accounts_res if not acc.get('offbudget') and not acc.get('closed')]
-    
-    current_year = datetime.now().year  # moved out of loop; same value every iteration
+def fetch_actual_data():
+    cats_res = _api_get("categories")['data']
+    payees_res = _api_get("payees")['data']
+    accounts_res = _api_get("accounts")['data']
+
+    active_accounts = [
+        acc['id'] for acc in accounts_res
+        if not acc.get('offbudget') and not acc.get('closed')
+    ]
+
+    current_year = datetime.now().year
     raw_txns = []
     for acc_id in active_accounts:
-        txns = requests.get(f"{API_URL}/accounts/{acc_id}/transactions?since_date={current_year}-01-01", headers=HEADERS).json().get('data', [])
-        
+        data = _api_get(f"accounts/{acc_id}/transactions?since_date={current_year}-01-01")
+        txns = data.get('data', [])
+
         for txn in txns:
             if txn.get('subtransactions'):
                 for sub in txn['subtransactions']:
@@ -38,101 +85,194 @@ def fetch_actual_data():
                 raw_txns.append(txn)
 
     df_txns = pd.DataFrame(raw_txns)
-    df_cats = pd.DataFrame(cats_res)[['id', 'name', 'is_income']]
-    df_payees = pd.DataFrame(payees_res)[['id', 'name']]
-    
-    df_cats.rename(columns={'id': 'category', 'name': 'Category_Name'}, inplace=True)
-    df_payees.rename(columns={'id': 'payee', 'name': 'Payee_Name'}, inplace=True)
-    
+    df_cats = pd.DataFrame(cats_res)[['id', 'name', 'is_income']].rename(
+        columns={'id': 'category', 'name': 'Category_Name'}
+    )
+    df_payees = pd.DataFrame(payees_res)[['id', 'name']].rename(
+        columns={'id': 'payee', 'name': 'Payee_Name'}
+    )
+
     df_merged = df_txns.merge(df_cats, on='category', how='left')
     df_merged = df_merged.merge(df_payees, on='payee', how='left')
-    
+
     df_merged['Payee_Name'] = df_merged['Payee_Name'].fillna(df_merged['imported_payee']).fillna("Unknown")
     df_merged['Category_Name'] = df_merged['Category_Name'].fillna("Uncategorized")
-    
+
     # Actual stores amounts as negative integer cents; flip sign and scale to dollars
-    df_merged['amount'] = (df_merged['amount'] / -100.0)
-    
-    # income/expense split happens downstream after the month filter
+    df_merged['amount'] = df_merged['amount'] / -100.0
+
     df_clean = df_merged[
-        (df_merged['category'].notna()) & 
-        (df_merged['tombstone'] == False)
+        df_merged['category'].notna() & ~df_merged['tombstone'].astype(bool)
     ].copy()
-    
+
     df_clean['date'] = pd.to_datetime(df_clean['date'])
     return df_clean
 
+
 @st.cache_data(ttl=300)
 def fetch_investment_balances():
-    accounts_res = requests.get(f"{API_URL}/accounts", headers=HEADERS).json().get('data', [])
+    accounts_res = _api_get("accounts").get('data', [])
     balances = {'RESP': {}, 'RRSP': {}, 'TFSA': {}}
-    
+
     resp_id = st.secrets["resp"]["identifier"].upper()
     rrsp_id = st.secrets["rrsp"]["identifier"].upper()
-    tfsa_id = "TFSA" 
-    
+    tfsa_id = "TFSA"
+
     for acc in accounts_res:
         if acc.get('offbudget') and not acc.get('closed'):
             name = acc['name'].upper()
             acc_type = None
-            
-            if resp_id in name: acc_type = 'RESP'
-            elif rrsp_id in name: acc_type = 'RRSP'
-            elif tfsa_id in name: acc_type = 'TFSA'
-            
+
+            if resp_id in name:
+                acc_type = 'RESP'
+            elif rrsp_id in name:
+                acc_type = 'RRSP'
+            elif tfsa_id in name:
+                acc_type = 'TFSA'
+
             if acc_type:
-                bal_res = requests.get(f"{API_URL}/accounts/{acc['id']}/balance", headers=HEADERS).json()
+                bal_res = _api_get(f"accounts/{acc['id']}/balance")
                 balances[acc_type][acc['name']] = bal_res.get('data', 0) / 100.0
-                
+
     return balances
+
 
 @st.cache_data(ttl=300)
 def fetch_underbudgeted_amounts():
     now = datetime.now()
-    target_months = [(now + pd.DateOffset(months=i)) for i in range(3)]
+    target_months = [now + relativedelta(months=i) for i in range(3)]
     months_str = [m.strftime('%Y%m') for m in target_months]
-    
+
     results = {m: 0.0 for m in months_str}
-    
-    export_url = f"{API_URL}/export"
+    error_msg = None
+
     try:
-        resp = requests.get(export_url, headers=HEADERS, timeout=15)
+        resp = requests.get(f"{API_URL}/export", headers=HEADERS, timeout=API_TIMEOUT)
         resp.raise_for_status()
-        
+
         with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
             db_bytes = z.read('db.sqlite')
-            
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.sqlite') as tmp:
-            tmp.write(db_bytes)
-            tmp_path = tmp.name
 
-        conn = None  # guard for finally block if connect() raises
-        try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = os.path.join(tmp_dir, 'db.sqlite')
+            with open(tmp_path, 'wb') as f:
+                f.write(db_bytes)
+
             conn = sqlite3.connect(tmp_path)
-            cursor = conn.cursor()
-            for m in months_str:
-                cursor.execute("""
-                    SELECT COALESCE(SUM(zero_budgets.goal - zero_budgets.amount), 0) / 100.0
-                    FROM zero_budgets
-                    INNER JOIN categories ON categories.id = zero_budgets.category
-                    WHERE month = ?
-                      AND amount < goal;
-                """, (m,))
-                # amount < goal excludes over-funded categories; <> would let them offset the sum
-                row = cursor.fetchone()
-                results[m] = row[0] if row and row[0] else 0.0
-        finally:
-            if conn:
+            try:
+                cursor = conn.cursor()
+                for m in months_str:
+                    cursor.execute("""
+                        SELECT COALESCE(SUM(zero_budgets.goal - zero_budgets.amount), 0) / 100.0
+                        FROM zero_budgets
+                        INNER JOIN categories ON categories.id = zero_budgets.category
+                        WHERE month = ?
+                          AND amount < goal;
+                    """, (m,))
+                    row = cursor.fetchone()
+                    results[m] = row[0] if row and row[0] else 0.0
+            finally:
                 conn.close()
-            os.remove(tmp_path) 
-            
+
     except Exception as e:
-        st.warning(f"Failed to fetch underbudgeted amounts: {e}")
-        
-    return results, target_months
+        error_msg = f"Failed to fetch underbudgeted amounts: {e}"
+
+    return results, target_months, error_msg
+
+
+# --- Shared Forecast Rendering ---
+def render_forecast_chart(forecast_data: list, current_year: int, years_to_track: int,
+                          total_current: float, total_halfway: float, total_final: float):
+    halfway_offset = years_to_track // 2
+
+    mc1, mc2, mc3 = st.columns(3)
+    mc1.metric("Current Total", f"${total_current:,.2f}")
+    mc2.metric(f"Halfway Projection ({current_year + halfway_offset})", f"${total_halfway:,.0f}")
+    mc3.metric(f"Final Projection ({current_year + years_to_track})", f"${total_final:,.0f}")
+
+    df_forecast = pd.DataFrame(forecast_data)
+
+    base = alt.Chart(df_forecast).encode(
+        x=alt.X('Year:O', axis=alt.Axis(labelAngle=-45, title="Year")),
+        y=alt.Y('Projected Balance:Q', axis=alt.Axis(format='$,.0f', title="Balance")),
+        color=alt.Color('Account:N', legend=alt.Legend(orient='bottom', title=None))
+    )
+
+    line = base.mark_line(point=True, strokeWidth=3).encode(
+        tooltip=[
+            alt.Tooltip('Year:O'),
+            alt.Tooltip('Account:N'),
+            alt.Tooltip('Projected Balance:Q', format='$,.2f', title='Balance'),
+        ]
+    )
+    text = base.mark_text(
+        align='left', baseline='middle', dx=8, dy=-10, fontSize=12, fontWeight='bold'
+    ).encode(text='Label:N')
+
+    chart = (line + text).properties(height=350).interactive()
+    st.altair_chart(chart, width="stretch")
+
+
+def build_forecast_data(account_dict: dict, years_to_track: int, current_year: int,
+                        return_rate_fn, contribution_fn):
+    forecast_data = []
+    total_current = sum(account_dict.values())
+    total_halfway = 0.0
+    total_final = 0.0
+    halfway_offset = years_to_track // 2
+
+    for name, initial_balance in account_dict.items():
+        current_balance = initial_balance
+        rate = return_rate_fn(name)
+
+        for year_offset in range(years_to_track + 1):
+            future_year = current_year + year_offset
+
+            if year_offset == halfway_offset:
+                total_halfway += current_balance
+            if year_offset == years_to_track:
+                total_final += current_balance
+
+            is_milestone = (year_offset % 5 == 0) or (year_offset == years_to_track)
+
+            forecast_data.append({
+                "Year": future_year,
+                "Account": name,
+                "Projected Balance": current_balance,
+                "Label": f"${current_balance:,.0f}" if is_milestone else "",
+            })
+
+            contrib = contribution_fn(name, year_offset)
+            current_balance = (current_balance * (1 + rate)) + contrib
+
+    return forecast_data, total_current, total_halfway, total_final
+
+
+def render_forecast_section(title: str, account_dict: dict, years_to_track: int,
+                            return_rate: float, annual_contribution: float = 0):
+    if not account_dict:
+        st.info("No accounts found for this category.")
+        return
+
+    st.subheader(title)
+    current_year = datetime.now().year
+
+    forecast_data, total_current, total_halfway, total_final = build_forecast_data(
+        account_dict,
+        years_to_track,
+        current_year,
+        return_rate_fn=lambda _name: return_rate,
+        contribution_fn=lambda _name, _offset: annual_contribution,
+    )
+
+    render_forecast_chart(
+        forecast_data, current_year, years_to_track,
+        total_current, total_halfway, total_final,
+    )
+
 
 # --- UI Rendering ---
-st.title("💸 Actual Budget Dashboard")
+st.title("Actual Budget Dashboard")
 
 with st.spinner("Fetching data from Actual API..."):
     df = fetch_actual_data()
@@ -144,11 +284,11 @@ selected_month = st.sidebar.selectbox("Select Month", month_options)
 
 df_filtered = df[df['date'].dt.strftime('%Y-%m') == selected_month]
 
-df_income = df_filtered[df_filtered['is_income'] == True].copy()
+df_income = df_filtered[df_filtered['is_income'].eq(True)].copy()
 # Income was flipped to negative by the global /−100 conversion; restore to positive
 df_income['amount'] = df_income['amount'] * -1
 
-df_expenses = df_filtered[df_filtered['is_income'] != True].copy()
+df_expenses = df_filtered[~df_filtered['is_income'].eq(True)].copy()
 
 # --- Dashboard Layout ---
 st.subheader("Monthly Overview")
@@ -160,26 +300,8 @@ net_income = total_income - total_spent
 # 1. Top Line: High Level Metrics & Forecasting Inputs
 col_inc, col_exp, col_net, col_forecast = st.columns(4)
 
-import re
-
-def parse_math_input(expr_str):
-    # A lightweight sanitization function to safely evaluate user arithmetic.
-    # This prevents injection attacks while allowing formulas like "500 + 150"
-    if not expr_str:
-        return 0.0
-    # Strip all whitespace for clean evaluation
-    clean_expr = expr_str.replace(" ", "")
-    # Strictly limit to numbers, basic operators, and decimals to guarantee safety
-    if re.match(r'^[\d\+\-\*\/\.]+$', clean_expr):
-        try:
-            return float(eval(clean_expr))
-        except Exception:
-            return 0.0
-    return 0.0
-
 with col_inc:
     st.metric("Actual Income", f"${total_income:,.2f}")
-    # Replaced number_input with text_input so the user can natively write out arithmetic
     add_inc_str = st.text_input("Forecasted Income (e.g. 500+200)", value="0", key="add_inc")
     expected_income = total_income + parse_math_input(add_inc_str)
 
@@ -197,7 +319,6 @@ with col_net:
     st.metric("Actual Net", f"${net_income:,.2f}", delta=savings_delta, delta_color="normal")
 
 with col_forecast:
-    # Calculate the forecasted reality based on the user's manual inputs to show end-of-month cash flow
     forecast_net = expected_income - expected_expenses
     if expected_income > 0:
         forecast_savings_rate = (forecast_net / expected_income) * 100
@@ -207,50 +328,77 @@ with col_forecast:
     st.metric("Expected Net", f"${forecast_net:,.2f}", delta=forecast_delta, delta_color="normal")
 
 # 2. Second Line: Separate Income and Expense Bars (Paced Against Expected)
-max_expected = max(expected_income, expected_expenses)
-if max_expected == 0:
-    max_expected = 1.0 # Guard against division by zero if all inputs are zeroed out
+max_expected = max(expected_income, expected_expenses, 1.0)
 
-# Cap the percentages at 100% so the CSS layout doesn't break if actual exceeds target
 inc_pct = min((total_income / max_expected) * 100, 100.0)
 exp_pct = min((total_spent / max_expected) * 100, 100.0)
 
 LABEL_THRESHOLD = 20
 
+
 def bar_html(pct, color_solid, color_bg, color_border, label, amount_str, expected_str):
     label_inside = pct > LABEL_THRESHOLD
-    fill_content = f'<span style="color: white; font-weight: bold; font-size: 13px; padding: 0 10px;">{amount_str}</span>' if label_inside else ''
-    outside_label = '' if label_inside else f'<span style="margin-left: 8px; font-weight: bold; font-size: 13px; color: {color_solid};">{amount_str}</span>'
-    
-    # Swapped the target text color to #999999 for cross-theme visibility while maintaining the single-line markdown fix
-    return f'<div style="display: flex; align-items: center; margin-bottom: 10px;"><div style="width: 85px; font-weight: bold; color: {color_solid}; font-size: 14px;">{label}</div><div style="flex-grow: 1; background-color: {color_bg}; border-radius: 6px; height: 28px; border: 1px solid {color_border}; display: flex; align-items: center; justify-content: space-between; padding-right: 10px;"><div style="display: flex; align-items: center; width: 100%; height: 100%;"><div style="background-color: {color_solid}; width: {pct}%; height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end;">{fill_content}</div>{outside_label}</div><span style="color: #999999; font-size: 12px; font-weight: bold; white-space: nowrap;">Target: {expected_str}</span></div></div>'
-# Ensure the outer container also has zero leading indentation
-# Ensure the outer container is also a continuous single line
-st.markdown(f'<div style="margin-bottom: 25px;">{bar_html(inc_pct, "#28a745", "rgba(40,167,69,0.15)", "rgba(40,167,69,0.3)", "Income", f"${total_income:,.2f}", f"${expected_income:,.0f}")}{bar_html(exp_pct, "#dc3545", "rgba(220,53,69,0.15)", "rgba(220,53,69,0.3)", "Expenses", f"${total_spent:,.2f}", f"${expected_expenses:,.0f}")}</div>', unsafe_allow_html=True)
+    fill_content = (
+        f'<span style="color: white; font-weight: bold; font-size: 13px; padding: 0 10px;">'
+        f'{amount_str}</span>'
+        if label_inside else ''
+    )
+    outside_label = (
+        '' if label_inside
+        else f'<span style="margin-left: 8px; font-weight: bold; font-size: 13px; '
+             f'color: {color_solid};">{amount_str}</span>'
+    )
+
+    return (
+        f'<div style="display: flex; align-items: center; margin-bottom: 10px;">'
+        f'<div style="width: 85px; font-weight: bold; color: {color_solid}; font-size: 14px;">'
+        f'{label}</div>'
+        f'<div style="flex-grow: 1; background-color: {color_bg}; border-radius: 6px; '
+        f'height: 28px; border: 1px solid {color_border}; display: flex; align-items: center; '
+        f'justify-content: space-between; padding-right: 10px;">'
+        f'<div style="display: flex; align-items: center; width: 100%; height: 100%;">'
+        f'<div style="background-color: {color_solid}; width: {pct}%; height: 100%; '
+        f'border-radius: 5px; display: flex; align-items: center; justify-content: flex-end;">'
+        f'{fill_content}</div>{outside_label}</div>'
+        f'<span style="color: #999999; font-size: 12px; font-weight: bold; white-space: nowrap;">'
+        f'Target: {expected_str}</span></div></div>'
+    )
+
+
+st.markdown(
+    f'<div style="margin-bottom: 25px;">'
+    f'{bar_html(inc_pct, "#28a745", "rgba(40,167,69,0.15)", "rgba(40,167,69,0.3)", "Income", f"${total_income:,.2f}", f"${expected_income:,.0f}")}'
+    f'{bar_html(exp_pct, "#dc3545", "rgba(220,53,69,0.15)", "rgba(220,53,69,0.3)", "Expenses", f"${total_spent:,.2f}", f"${expected_expenses:,.0f}")}'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 # 3. Third Line: Envelope Health Checks
 st.subheader("Future Envelope Health")
-underbudget_data, target_months = fetch_underbudgeted_amounts()
+underbudget_data, target_months, underbudget_error = fetch_underbudgeted_amounts()
+if underbudget_error:
+    st.warning(underbudget_error)
+
 m_cols = st.columns(3)
 
 for i, m_obj in enumerate(target_months):
     m_str = m_obj.strftime('%Y%m')
-    m_label = m_obj.strftime('%b %Y') 
+    m_label = m_obj.strftime('%b %Y')
     val = underbudget_data.get(m_str, 0.0)
-    
+
     if val > 0:
         m_cols[i].metric(
-            label=f"Underfunded ({m_label})", 
+            label=f"Underfunded ({m_label})",
             value=f"${val:,.2f}",
             delta="Action Required",
-            delta_color="inverse" 
+            delta_color="inverse",
         )
     else:
         m_cols[i].metric(
-            label=f"Underfunded ({m_label})", 
+            label=f"Underfunded ({m_label})",
             value=f"${val:,.2f}",
             delta="Fully Funded",
-            delta_color="normal" 
+            delta_color="normal",
         )
 
 st.markdown("---")
@@ -260,16 +408,16 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("Spending by Category")
     cat_summary = df_expenses.groupby('Category_Name')['amount'].sum().reset_index()
-    
+
     bar_chart = alt.Chart(cat_summary).mark_bar().encode(
         x=alt.X('amount:Q', title='Amount', axis=alt.Axis(format='$,.0f')),
         y=alt.Y('Category_Name:N', sort='-x', title=''),
         tooltip=[
-            alt.Tooltip('Category_Name:N', title='Category'), 
-            alt.Tooltip('amount:Q', format='$,.2f', title='Total Spent')
-        ]
+            alt.Tooltip('Category_Name:N', title='Category'),
+            alt.Tooltip('amount:Q', format='$,.2f', title='Total Spent'),
+        ],
     )
-    
+
     st.altair_chart(bar_chart, width="stretch")
 
 with col2:
@@ -281,21 +429,21 @@ with col2:
 
 # --- TFSA Contributions (YTD) ---
 st.markdown("---")
-st.header("📈 TFSA Contributions (YTD)")
+st.header("TFSA Contributions (YTD)")
 
 tfsa_cats = st.secrets["categories"]["tfsa_tracking"]
 
-# df is unfiltered YTD; df_expenses is scoped to the selected month
-df_ytd_expenses = df[df['is_income'] != True]
+df_ytd_expenses = df[~df['is_income'].eq(True)]
 df_tfsa = df_ytd_expenses[df_ytd_expenses['Category_Name'].isin(tfsa_cats)].copy()
 
 if not df_tfsa.empty:
     tfsa_total = df_tfsa['amount'].sum()
-    
-    cat_totals = {}
-    for cat in tfsa_cats:
-        cat_totals[cat] = df_tfsa[df_tfsa['Category_Name'] == cat]['amount'].sum()
-    
+
+    cat_totals = {
+        cat: df_tfsa[df_tfsa['Category_Name'] == cat]['amount'].sum()
+        for cat in tfsa_cats
+    }
+
     TFSA_LIMIT = float(st.secrets["tfsa"]["ytd_limit"])
     progress_pct = min(tfsa_total / TFSA_LIMIT, 1.0)
     remaining = max(TFSA_LIMIT - tfsa_total, 0.0)
@@ -303,10 +451,14 @@ if not df_tfsa.empty:
     cols = st.columns(len(tfsa_cats) + 1)
     for i, (cat, total) in enumerate(cat_totals.items()):
         cols[i].metric(cat, f"${total:,.2f}")
-    cols[-1].metric("Total Contributed", f"${tfsa_total:,.2f}", f"{(tfsa_total/TFSA_LIMIT)*100:.1f}% of ${TFSA_LIMIT:,.2f} Limit")
+    cols[-1].metric(
+        "Total Contributed",
+        f"${tfsa_total:,.2f}",
+        f"{(tfsa_total / TFSA_LIMIT) * 100:.1f}% of ${TFSA_LIMIT:,.2f} Limit",
+    )
 
     st.progress(progress_pct, text=f"${remaining:,.2f} remaining of ${TFSA_LIMIT:,.2f} annual limit")
-    
+
     st.subheader("Contribution Velocity")
     daily_tfsa = df_tfsa.groupby(['date', 'Category_Name'])['amount'].sum().reset_index()
     daily_tfsa = daily_tfsa.sort_values('date')
@@ -319,8 +471,8 @@ if not df_tfsa.empty:
         tooltip=[
             alt.Tooltip('date:T', title='Date'),
             alt.Tooltip('Category_Name:N', title='Category'),
-            alt.Tooltip('Cumulative:Q', format='$,.2f', title='Cumulative')
-        ]
+            alt.Tooltip('Cumulative:Q', format='$,.2f', title='Cumulative'),
+        ],
     ).properties(height=300).interactive()
 
     st.altair_chart(area_chart, width="stretch")
@@ -329,92 +481,45 @@ else:
 
 # --- Investment Forecasting ---
 st.markdown("---")
-st.header("🔮 Investment Forecasts")
+st.header("Investment Forecasts")
 
 balances = fetch_investment_balances()
 current_year = datetime.now().year
 
-tab_resp, tab_rrsp, tab_tfsa = st.tabs(["🎓 RESP", "🏦 RRSP", "📈 TFSA"])
-
-def render_forecast_section(title, account_dict, years_to_track, return_rate, annual_contribution=0):
-    if not account_dict:
-        st.info("No accounts found for this category.")
-        return
-        
-    st.subheader(title)
-    
-    forecast_data = []
-    
-    total_current = sum(account_dict.values())
-    total_halfway = 0.0
-    total_final = 0.0
-    halfway_offset = years_to_track // 2
-    
-    for name, initial_balance in account_dict.items():
-        current_balance = initial_balance
-        
-        for year_offset in range(years_to_track + 1):
-            future_year = current_year + year_offset
-            
-            if year_offset == halfway_offset:
-                total_halfway += current_balance
-            if year_offset == years_to_track:
-                total_final += current_balance
-
-            is_milestone = (year_offset % 5 == 0) or (year_offset == years_to_track)
-            
-            forecast_data.append({
-                "Year": future_year,
-                "Account": name,
-                "Projected Balance": current_balance,
-                "Label": f"${current_balance:,.0f}" if is_milestone else ""
-            })
-            
-            current_balance = (current_balance * (1 + return_rate)) + annual_contribution
-            
-    mc1, mc2, mc3 = st.columns(3)
-    mc1.metric("Current Total", f"${total_current:,.2f}")
-    mc2.metric(f"Halfway Projection ({current_year + halfway_offset})", f"${total_halfway:,.0f}")
-    mc3.metric(f"Final Projection ({current_year + years_to_track})", f"${total_final:,.0f}")
-            
-    df_forecast = pd.DataFrame(forecast_data)
-    
-    base = alt.Chart(df_forecast).encode(
-        x=alt.X('Year:O', axis=alt.Axis(labelAngle=-45, title="Year")),
-        y=alt.Y('Projected Balance:Q', axis=alt.Axis(format='$,.0f', title="Balance")),
-        color=alt.Color('Account:N', legend=alt.Legend(orient='bottom', title=None))
-    )
-    
-    line = base.mark_line(point=True, strokeWidth=3).encode(
-        tooltip=[alt.Tooltip('Year:O'), alt.Tooltip('Account:N'), alt.Tooltip('Projected Balance:Q', format='$,.2f', title='Balance')]
-    )
-    text = base.mark_text(align='left', baseline='middle', dx=8, dy=-10, fontSize=12, fontWeight='bold').encode(text='Label:N')
-    chart = (line + text).properties(height=350).interactive()
-    
-    st.altair_chart(chart, width="stretch")
+tab_resp, tab_rrsp, tab_tfsa = st.tabs(["RESP", "RRSP", "TFSA"])
 
 # --- RESP Section ---
 with tab_resp:
     resp_cfg = st.secrets["resp"]
-    resp_return_pct = st.slider("RESP Expected YoY Return (%)", min_value=0.0, max_value=15.0, value=float(resp_cfg["default_return_pct"]), step=0.5)
+    resp_return_pct = st.slider(
+        "RESP Expected YoY Return (%)",
+        min_value=0.0, max_value=15.0,
+        value=float(resp_cfg["default_return_pct"]), step=0.5,
+    )
     render_forecast_section(
-        f"{resp_cfg.get('identifier', 'RESP')} Forecast ({resp_cfg['horizon_years']}-Year Horizon, ${resp_cfg['monthly_contribution']}/mo)", 
-        balances.get('RESP', {}), 
-        years_to_track=int(resp_cfg["horizon_years"]), 
-        return_rate=(resp_return_pct / 100.0), 
-        annual_contribution=(float(resp_cfg["monthly_contribution"]) * 12)
+        f"{resp_cfg.get('identifier', 'RESP')} Forecast "
+        f"({resp_cfg['horizon_years']}-Year Horizon, ${resp_cfg['monthly_contribution']}/mo)",
+        balances.get('RESP', {}),
+        years_to_track=int(resp_cfg["horizon_years"]),
+        return_rate=resp_return_pct / 100.0,
+        annual_contribution=float(resp_cfg["monthly_contribution"]) * 12,
     )
 
 # --- RRSP Section ---
 with tab_rrsp:
     rrsp_cfg = st.secrets["rrsp"]
-    rrsp_return_pct = st.slider(f"{rrsp_cfg.get('identifier', 'RRSP')} Expected YoY Return (%)", min_value=0.0, max_value=15.0, value=float(rrsp_cfg["default_return_pct"]), step=0.5)
+    rrsp_return_pct = st.slider(
+        f"{rrsp_cfg.get('identifier', 'RRSP')} Expected YoY Return (%)",
+        min_value=0.0, max_value=15.0,
+        value=float(rrsp_cfg["default_return_pct"]), step=0.5,
+    )
     render_forecast_section(
-        f"{rrsp_cfg.get('identifier', 'RRSP')} Forecast ({rrsp_cfg['horizon_years']}-Year Horizon, ${rrsp_cfg['annual_contribution']}/yr)", 
-        balances.get('RRSP', {}), 
-        years_to_track=int(rrsp_cfg["horizon_years"]), 
-        return_rate=(rrsp_return_pct / 100.0), 
-        annual_contribution=float(rrsp_cfg["annual_contribution"])
+        f"{rrsp_cfg.get('identifier', 'RRSP')} Forecast "
+        f"({rrsp_cfg['horizon_years']}-Year Horizon, ${rrsp_cfg['annual_contribution']}/yr)",
+        balances.get('RRSP', {}),
+        years_to_track=int(rrsp_cfg["horizon_years"]),
+        return_rate=rrsp_return_pct / 100.0,
+        annual_contribution=float(rrsp_cfg["annual_contribution"]),
     )
 
 # --- TFSA Section ---
@@ -424,79 +529,48 @@ with tab_tfsa:
 
     col_t1, col_t2 = st.columns(2)
     with col_t1:
-        tfsa_base_return_pct = st.slider(f"Base TFSA ({tfsa_cfg['base']['identifier']}) YoY Return (%)", min_value=0.0, max_value=15.0, value=float(tfsa_cfg["base"]["default_return_pct"]), step=0.5)
+        tfsa_base_return_pct = st.slider(
+            f"Base TFSA ({tfsa_cfg['base']['identifier']}) YoY Return (%)",
+            min_value=0.0, max_value=15.0,
+            value=float(tfsa_cfg["base"]["default_return_pct"]), step=0.5,
+        )
     with col_t2:
-        tfsa_ws_return_pct = st.slider(f"Catch-up TFSA ({tfsa_cfg['catchup']['identifier']}) YoY Return (%)", min_value=0.0, max_value=15.0, value=float(tfsa_cfg["catchup"]["default_return_pct"]), step=0.5)
+        tfsa_ws_return_pct = st.slider(
+            f"Catch-up TFSA ({tfsa_cfg['catchup']['identifier']}) YoY Return (%)",
+            min_value=0.0, max_value=15.0,
+            value=float(tfsa_cfg["catchup"]["default_return_pct"]), step=0.5,
+        )
 
     tfsa_balances = balances.get('TFSA', {})
 
     if tfsa_balances:
-        forecast_data = []
-        
         years_to_track = int(tfsa_cfg["horizon_years"])
-        total_current = sum(tfsa_balances.values())
-        total_halfway = 0.0
-        total_final = 0.0
-        halfway_offset = years_to_track // 2
-        
         ANNUAL_TFSA_ROOM = float(tfsa_cfg["annual_room"])
         BASE_TFSA_MONTHLY = float(tfsa_cfg["base"]["monthly_contribution"])
         BASE_TFSA_ANNUAL = BASE_TFSA_MONTHLY * 12
         WS_CATCHUP_YEAR_ANNUAL = float(tfsa_cfg["catchup"]["catchup_year_contribution"])
         WS_FUTURE_ANNUAL = ANNUAL_TFSA_ROOM - BASE_TFSA_ANNUAL
-        
         catchup_match = tfsa_cfg["catchup"]["identifier"].upper()
-        
-        for name, initial_balance in tfsa_balances.items():
-            current_balance = initial_balance
-            
-            is_catchup = catchup_match in name.upper()
-            return_rate = (tfsa_ws_return_pct / 100.0) if is_catchup else (tfsa_base_return_pct / 100.0)
-            
-            for year_offset in range(years_to_track + 1):
-                future_year = current_year + year_offset
-                
-                if year_offset == halfway_offset:
-                    total_halfway += current_balance
-                if year_offset == years_to_track:
-                    total_final += current_balance
 
-                is_milestone = (year_offset % 5 == 0) or (year_offset == years_to_track)
-                
-                forecast_data.append({
-                    "Year": future_year,
-                    "Account": name,
-                    "Projected Balance": current_balance,
-                    "Label": f"${current_balance:,.0f}" if is_milestone else ""
-                })
-                
-                # catchup account gets a higher first-year contribution while clearing its backlog
-                if is_catchup:
-                    contrib = WS_CATCHUP_YEAR_ANNUAL if year_offset == 0 else WS_FUTURE_ANNUAL
-                else:
-                    contrib = BASE_TFSA_ANNUAL
-                    
-                current_balance = (current_balance * (1 + return_rate)) + contrib
-                
-        mc1, mc2, mc3 = st.columns(3)
-        mc1.metric("Current Total", f"${total_current:,.2f}")
-        mc2.metric(f"Halfway Projection ({current_year + halfway_offset})", f"${total_halfway:,.0f}")
-        mc3.metric(f"Final Projection ({current_year + years_to_track})", f"${total_final:,.0f}")
-                
-        df_forecast = pd.DataFrame(forecast_data)
-        
-        base = alt.Chart(df_forecast).encode(
-            x=alt.X('Year:O', axis=alt.Axis(labelAngle=-45, title="Year")),
-            y=alt.Y('Projected Balance:Q', axis=alt.Axis(format='$,.0f', title="Balance")),
-            color=alt.Color('Account:N', legend=alt.Legend(orient='bottom', title=None))
+        def _tfsa_return_rate(name: str) -> float:
+            if catchup_match in name.upper():
+                return tfsa_ws_return_pct / 100.0
+            return tfsa_base_return_pct / 100.0
+
+        def _tfsa_contribution(name: str, year_offset: int) -> float:
+            if catchup_match in name.upper():
+                return WS_CATCHUP_YEAR_ANNUAL if year_offset == 0 else WS_FUTURE_ANNUAL
+            return BASE_TFSA_ANNUAL
+
+        forecast_data, total_current, total_halfway, total_final = build_forecast_data(
+            tfsa_balances, years_to_track, current_year,
+            return_rate_fn=_tfsa_return_rate,
+            contribution_fn=_tfsa_contribution,
         )
-        
-        line = base.mark_line(point=True, strokeWidth=3).encode(
-            tooltip=[alt.Tooltip('Year:O'), alt.Tooltip('Account:N'), alt.Tooltip('Projected Balance:Q', format='$,.2f', title='Balance')]
+
+        render_forecast_chart(
+            forecast_data, current_year, years_to_track,
+            total_current, total_halfway, total_final,
         )
-        text = base.mark_text(align='left', baseline='middle', dx=8, dy=-10, fontSize=12, fontWeight='bold').encode(text='Label:N')
-        chart = (line + text).properties(height=350).interactive()
-        
-        st.altair_chart(chart, width="stretch")
     else:
         st.info("No TFSA accounts found.")
