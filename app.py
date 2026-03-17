@@ -157,50 +157,78 @@ total_income = df_income['amount'].sum()
 total_spent = df_expenses['amount'].sum()
 net_income = total_income - total_spent
 
-col_inc, col_exp, col_net = st.columns(3)
-col_inc.metric("Income", f"${total_income:,.2f}")
-col_exp.metric("Expenses", f"${total_spent:,.2f}")
+# 1. Top Line: High Level Metrics & Forecasting Inputs
+col_inc, col_exp, col_net, col_forecast = st.columns(4)
 
-# Savings rate as delta gives more signal than restating net income
-if total_income > 0:
-    savings_rate = (net_income / total_income) * 100
-    savings_delta = f"{savings_rate:.1f}% savings rate"
-else:
-    savings_delta = None
-col_net.metric("Net Income", f"${net_income:,.2f}", delta=savings_delta, delta_color="normal")
+import re
 
-# Scale bars relative to each other so the larger value always fills the track
-max_val = max(total_income, total_spent)
-if max_val == 0:
-    max_val = 1.0
+def parse_math_input(expr_str):
+    # A lightweight sanitization function to safely evaluate user arithmetic.
+    # This prevents injection attacks while allowing formulas like "500 + 150"
+    if not expr_str:
+        return 0.0
+    # Strip all whitespace for clean evaluation
+    clean_expr = expr_str.replace(" ", "")
+    # Strictly limit to numbers, basic operators, and decimals to guarantee safety
+    if re.match(r'^[\d\+\-\*\/\.]+$', clean_expr):
+        try:
+            return float(eval(clean_expr))
+        except Exception:
+            return 0.0
+    return 0.0
 
-inc_pct = (total_income / max_val) * 100
-exp_pct = (total_spent / max_val) * 100
+with col_inc:
+    st.metric("Actual Income", f"${total_income:,.2f}")
+    # Replaced number_input with text_input so the user can natively write out arithmetic
+    add_inc_str = st.text_input("Forecasted Income (e.g. 500+200)", value="0", key="add_inc")
+    expected_income = total_income + parse_math_input(add_inc_str)
 
-# When a bar is too narrow to contain its label, render the label outside the fill
+with col_exp:
+    st.metric("Actual Expenses", f"${total_spent:,.2f}")
+    add_exp_str = st.text_input("Forecasted Expense (e.g. 100+50)", value="0", key="add_exp")
+    expected_expenses = total_spent + parse_math_input(add_exp_str)
+
+with col_net:
+    if total_income > 0:
+        savings_rate = (net_income / total_income) * 100
+        savings_delta = f"{savings_rate:.1f}% savings rate"
+    else:
+        savings_delta = None
+    st.metric("Actual Net", f"${net_income:,.2f}", delta=savings_delta, delta_color="normal")
+
+with col_forecast:
+    # Calculate the forecasted reality based on the user's manual inputs to show end-of-month cash flow
+    forecast_net = expected_income - expected_expenses
+    if expected_income > 0:
+        forecast_savings_rate = (forecast_net / expected_income) * 100
+        forecast_delta = f"{forecast_savings_rate:.1f}% expected savings"
+    else:
+        forecast_delta = None
+    st.metric("Expected Net", f"${forecast_net:,.2f}", delta=forecast_delta, delta_color="normal")
+
+# 2. Second Line: Separate Income and Expense Bars (Paced Against Expected)
+max_expected = max(expected_income, expected_expenses)
+if max_expected == 0:
+    max_expected = 1.0 # Guard against division by zero if all inputs are zeroed out
+
+# Cap the percentages at 100% so the CSS layout doesn't break if actual exceeds target
+inc_pct = min((total_income / max_expected) * 100, 100.0)
+exp_pct = min((total_spent / max_expected) * 100, 100.0)
+
 LABEL_THRESHOLD = 20
 
-def bar_html(pct, color_solid, color_bg, color_border, label, amount_str):
+def bar_html(pct, color_solid, color_bg, color_border, label, amount_str, expected_str):
     label_inside = pct > LABEL_THRESHOLD
-    fill_content = f'<span style="color:white;font-weight:bold;font-size:13px;padding:0 10px">{amount_str}</span>' if label_inside else ''
-    outside_label = f'<span style="margin-left:8px;font-weight:bold;font-size:13px;color:{color_solid}">{amount_str}</span>' if not label_inside else ''
-    return (
-        f'<div style="display:flex;align-items:center;margin-bottom:10px">'
-        f'<div style="width:85px;font-weight:bold;color:{color_solid};font-size:14px">{label}</div>'
-        f'<div style="flex-grow:1;background-color:{color_bg};border-radius:6px;height:28px;border:1px solid {color_border};display:flex;align-items:center">'
-        f'<div style="background-color:{color_solid};width:{pct}%;height:100%;border-radius:5px;display:flex;align-items:center;justify-content:flex-end">'
-        f'{fill_content}</div>{outside_label}</div></div>'
-    )
+    fill_content = f'<span style="color: white; font-weight: bold; font-size: 13px; padding: 0 10px;">{amount_str}</span>' if label_inside else ''
+    outside_label = '' if label_inside else f'<span style="margin-left: 8px; font-weight: bold; font-size: 13px; color: {color_solid};">{amount_str}</span>'
+    
+    # Swapped the target text color to #999999 for cross-theme visibility while maintaining the single-line markdown fix
+    return f'<div style="display: flex; align-items: center; margin-bottom: 10px;"><div style="width: 85px; font-weight: bold; color: {color_solid}; font-size: 14px;">{label}</div><div style="flex-grow: 1; background-color: {color_bg}; border-radius: 6px; height: 28px; border: 1px solid {color_border}; display: flex; align-items: center; justify-content: space-between; padding-right: 10px;"><div style="display: flex; align-items: center; width: 100%; height: 100%;"><div style="background-color: {color_solid}; width: {pct}%; height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end;">{fill_content}</div>{outside_label}</div><span style="color: #999999; font-size: 12px; font-weight: bold; white-space: nowrap;">Target: {expected_str}</span></div></div>'
+# Ensure the outer container also has zero leading indentation
+# Ensure the outer container is also a continuous single line
+st.markdown(f'<div style="margin-bottom: 25px;">{bar_html(inc_pct, "#28a745", "rgba(40,167,69,0.15)", "rgba(40,167,69,0.3)", "Income", f"${total_income:,.2f}", f"${expected_income:,.0f}")}{bar_html(exp_pct, "#dc3545", "rgba(220,53,69,0.15)", "rgba(220,53,69,0.3)", "Expenses", f"${total_spent:,.2f}", f"${expected_expenses:,.0f}")}</div>', unsafe_allow_html=True)
 
-st.markdown(
-    f'<div style="margin-bottom:25px">'
-    f'{bar_html(inc_pct, "#28a745", "rgba(40,167,69,0.15)", "rgba(40,167,69,0.3)", "Income", f"${total_income:,.2f}")}'
-    f'{bar_html(exp_pct, "#dc3545", "rgba(220,53,69,0.15)", "rgba(220,53,69,0.3)", "Expenses", f"${total_spent:,.2f}")}'
-    f'</div>',
-    unsafe_allow_html=True
-)
-
-
+# 3. Third Line: Envelope Health Checks
 st.subheader("Future Envelope Health")
 underbudget_data, target_months = fetch_underbudgeted_amounts()
 m_cols = st.columns(3)
