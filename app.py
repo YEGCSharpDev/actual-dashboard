@@ -495,57 +495,123 @@ else:
 st.markdown("---")
 
 # --- Spending Flow (Sankey Diagram) ---
-st.subheader("Spending Flow")
+st.subheader("Monthly Cashflow (Income & Expenses)")
 
-# Group and filter out any zero-dollar categories to keep the diagram clean
-cat_summary = df_expenses.groupby('Category_Name')['amount'].sum().reset_index()
-cat_summary = cat_summary[cat_summary['amount'] > 0].sort_values('amount', ascending=False)
+# 1. Prepare Income Data
+inc_summary = df_income.groupby('Category_Name')['amount'].sum().reset_index()
+inc_summary = inc_summary[inc_summary['amount'] > 0].sort_values('amount', ascending=False)
 
-if not cat_summary.empty:
-    # A Sankey requires a list of nodes. 
-    # Index 0 is the Root ("Total Expenses"), and Indices 1 through N are the categories.
-    labels = ["Total Expenses"] + cat_summary['Category_Name'].tolist()
-    
-    # The 'source' for all flows is 0 (Total Expenses)
-    source = [0] * len(cat_summary)
-    
-    # The 'target' for the flows are the category indices (1 through N)
-    target = list(range(1, len(cat_summary) + 1))
-    
-    # The 'value' is the width of the flow lines
-    values = cat_summary['amount'].tolist()
+# 2. Prepare Expense Data
+exp_summary = df_expenses.groupby('Category_Name')['amount'].sum().reset_index()
+exp_summary = exp_summary[exp_summary['amount'] > 0].sort_values('amount', ascending=False)
 
-    # Build the Plotly Sankey figure
+if not exp_summary.empty or not inc_summary.empty:
+    total_inc = inc_summary['amount'].sum()
+    total_exp = exp_summary['amount'].sum()
+    net_flow = total_inc - total_exp
+
+    # 3. Define the Nodes
+    # Using prefixes (Inc:/Exp:) to prevent mapping collisions if an income category has the exact same name as an expense category
+    labels = ["Monthly Cashflow", "Total Expenses"]
+    if net_flow > 0:
+        labels.append("Savings (Net Income)")
+    elif net_flow < 0:
+        labels.append("Overspending (Deficit)")
+
+    inc_cats = [f"Inc:{row['Category_Name']}" for _, row in inc_summary.iterrows()]
+    exp_cats = [f"Exp:{row['Category_Name']}" for _, row in exp_summary.iterrows()]
+    
+    labels.extend(inc_cats)
+    labels.extend(exp_cats)
+    
+    label_idx = {name: i for i, name in enumerate(labels)}
+    
+    source = []
+    target = []
+    values = []
+    link_colors = []
+
+    # 4. Build the Flows (Links)
+    # Income to Cashflow
+    for _, row in inc_summary.iterrows():
+        source.append(label_idx[f"Inc:{row['Category_Name']}"])
+        target.append(label_idx["Monthly Cashflow"])
+        values.append(row['amount'])
+        link_colors.append("rgba(40, 167, 69, 0.4)") # Transparent green
+
+    # Deficit to Cashflow (if overspent)
+    if net_flow < 0:
+        source.append(label_idx["Overspending (Deficit)"])
+        target.append(label_idx["Monthly Cashflow"])
+        values.append(abs(net_flow))
+        link_colors.append("rgba(255, 193, 7, 0.4)") # Transparent yellow
+
+    # Cashflow to Total Expenses
+    source.append(label_idx["Monthly Cashflow"])
+    target.append(label_idx["Total Expenses"])
+    values.append(total_exp)
+    link_colors.append("rgba(220, 53, 69, 0.2)") # Light transparent red
+
+    # Cashflow to Savings (if net positive)
+    if net_flow > 0:
+        source.append(label_idx["Monthly Cashflow"])
+        target.append(label_idx["Savings (Net Income)"])
+        values.append(net_flow)
+        link_colors.append("rgba(40, 167, 69, 0.4)") # Transparent green
+
+    # Total Expenses to Individual Expense Categories
+    for _, row in exp_summary.iterrows():
+        source.append(label_idx["Total Expenses"])
+        target.append(label_idx[f"Exp:{row['Category_Name']}"])
+        values.append(row['amount'])
+        link_colors.append("rgba(220, 53, 69, 0.4)") # Transparent red
+
+    # 5. Node Styling & Cleanup
+    node_colors = []
+    display_labels = []
+    for name in labels:
+        # Strip the backend prefixes before displaying them to the user
+        display_labels.append(name.replace("Inc:", "").replace("Exp:", "")) 
+        
+        # Color code the nodes intuitively
+        if "Inc:" in name or "Savings" in name:
+            node_colors.append("#28a745") # Green
+        elif "Exp:" in name or name == "Total Expenses":
+            node_colors.append("#dc3545") # Red
+        elif "Overspending" in name:
+            node_colors.append("#ffc107") # Yellow
+        else:
+            node_colors.append("#6c757d") # Gray for the central Cashflow hub
+
+    # 6. Render Plotly Figure
     fig = go.Figure(data=[go.Sankey(
-        valueformat="$,.2f", # Automatically formats the hover tooltips as currency
+        valueformat="$,.2f",
         node=dict(
             pad=20,
             thickness=20,
             line=dict(color="rgba(0,0,0,0)", width=0),
-            label=labels,
-            color="#dc3545" # Bootstrap red to match the Expenses theme
+            label=display_labels,
+            color=node_colors
         ),
         link=dict(
             source=source,
             target=target,
             value=values,
-            color="rgba(220, 53, 69, 0.3)" # Transparent red for the sweeping flows
+            color=link_colors
         )
     )])
 
-    # Strip out the background so it seamlessly matches your Streamlit dark/light theme
     fig.update_layout(
         margin=dict(l=0, r=0, t=20, b=20),
-        height=700, # Massive height boost so labels don't bunch up
+        height=750, # Ensures large numbers of categories have room to breathe
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(size=13) # Bumped up the font size slightly for normal page zoom
+        font=dict(size=13)
     )
 
-    # Plotly figures still use use_container_width in Streamlit, unlike dataframes!
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 else:
-    st.info("No expenses found to chart for this month.")
+    st.info("No income or expense data found to chart for this month.")
 
 st.markdown("---")
 
