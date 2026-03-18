@@ -178,7 +178,41 @@ def fetch_underbudgeted_amounts():
         error_msg = f"Failed to fetch underbudgeted amounts: {e}"
 
     return results, target_months, error_msg
+@st.cache_data(ttl=300)
+@st.cache_data(ttl=300)
+def fetch_month_budgets(month_str: str) -> dict:
+    """Fetches the assigned (budgeted) amounts for all categories for a specific month."""
+    budgets = {}
+    try:
+        resp = requests.get(f"{API_URL}/export", headers=HEADERS, timeout=API_TIMEOUT)
+        resp.raise_for_status()
 
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+            db_bytes = z.read('db.sqlite')
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = os.path.join(tmp_dir, 'db.sqlite')
+            with open(tmp_path, 'wb') as f:
+                f.write(db_bytes)
+
+            conn = sqlite3.connect(tmp_path)
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT categories.name, COALESCE(zero_budgets.amount, 0) / 100.0
+                    FROM zero_budgets
+                    INNER JOIN categories ON categories.id = zero_budgets.category
+                    WHERE month = ?
+                """, (month_str,))
+                for row in cursor.fetchall():
+                    budgets[row[0]] = row[1]
+            finally:
+                conn.close()
+
+    except Exception as e:
+        st.warning(f"Failed to fetch category budgets: {e}")
+
+    return budgets
 
 # --- Shared Forecast Rendering ---
 def render_forecast_chart(forecast_data: list, current_year: int, years_to_track: int,
@@ -402,7 +436,62 @@ for i, m_obj in enumerate(target_months):
         )
 
 st.markdown("---")
+# --- Budgeted vs Spent (Key Categories) ---
+st.subheader("Key Category Tracking")
 
+# Dynamically pull the tracked categories directly from secrets.toml
+tracked_categories = st.secrets["categories"].get("budget_tracking", [])
+
+if tracked_categories:
+    # Format the selected Streamlit month (YYYY-MM) to match Actual's database (YYYYMM)
+    db_month_str = selected_month.replace('-', '')
+    monthly_budgets = fetch_month_budgets(db_month_str)
+
+    for cat in tracked_categories:
+        # Get the assigned budget amount (default to 0 if not found)
+        budgeted = monthly_budgets.get(cat, 0.0)
+        
+        # Calculate how much has been spent so far
+        spent = df_expenses[df_expenses['Category_Name'] == cat]['amount'].sum()
+        left = budgeted - spent
+        
+        # Calculate percentages safely
+        if budgeted > 0:
+            pct = (spent / budgeted) * 100
+        else:
+            pct = 100.0 if spent > 0 else 0.0
+
+        vis_pct = min(pct, 100.0) # Cap the visual fill at 100% to protect the CSS bounds
+        
+        # Color logic: Green (< 75%), Yellow (75-90%), Red (> 90%)
+        if pct < 75:
+            color = "#28a745"
+            bg_color = "rgba(40,167,69,0.15)"
+        elif pct < 90:
+            color = "#ffc107"
+            bg_color = "rgba(255,193,7,0.15)"
+        else:
+            color = "#dc3545"
+            bg_color = "rgba(220,53,69,0.15)"
+            
+        left_str = f"${left:,.2f} left" if left >= 0 else f"${abs(left):,.2f} over!"
+        
+        # HTML squashed into a single string to prevent Streamlit's markdown parser from breaking
+        bar_html = (
+            f'<div style="margin-bottom: 18px;">'
+            f'<div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px; font-weight: bold; color: #e0e0e0;">'
+            f'<span>{cat}</span><span style="color: {color};">{left_str}</span></div>'
+            f'<div style="position: relative; background-color: {bg_color}; border-radius: 6px; height: 26px; width: 100%; border: 1px solid {color}40; overflow: hidden;">'
+            f'<div style="background-color: {color}; width: {vis_pct}%; height: 100%; border-radius: 4px;"></div>'
+            f'<div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: space-between; align-items: center; padding: 0 10px; font-size: 12px; font-weight: bold; color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">'
+            f'<span>{pct:.1f}%</span><span>${spent:,.2f} / ${budgeted:,.0f}</span>'
+            f'</div></div></div>'
+        )
+        st.markdown(bar_html, unsafe_allow_html=True)
+else:
+    st.info("No budget tracking categories defined in secrets.toml.")
+
+st.markdown("---")
 col1, col2 = st.columns(2)
 
 with col1:
