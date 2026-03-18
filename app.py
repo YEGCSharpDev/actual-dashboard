@@ -13,6 +13,7 @@ import pandas as pd
 import requests
 import streamlit as st
 from dateutil.relativedelta import relativedelta
+import plotly.graph_objects as go
 
 # --- Configuration ---
 st.set_page_config(page_title="Actual Budget Dashboard", layout="wide")
@@ -492,29 +493,70 @@ else:
     st.info("No budget tracking categories defined in secrets.toml.")
 
 st.markdown("---")
-col1, col2 = st.columns(2)
 
-with col1:
-    st.subheader("Spending by Category")
-    cat_summary = df_expenses.groupby('Category_Name')['amount'].sum().reset_index()
+# --- Spending Flow (Sankey Diagram) ---
+st.subheader("Spending Flow")
 
-    bar_chart = alt.Chart(cat_summary).mark_bar().encode(
-        x=alt.X('amount:Q', title='Amount', axis=alt.Axis(format='$,.0f')),
-        y=alt.Y('Category_Name:N', sort='-x', title=''),
-        tooltip=[
-            alt.Tooltip('Category_Name:N', title='Category'),
-            alt.Tooltip('amount:Q', format='$,.2f', title='Total Spent'),
-        ],
+# Group and filter out any zero-dollar categories to keep the diagram clean
+cat_summary = df_expenses.groupby('Category_Name')['amount'].sum().reset_index()
+cat_summary = cat_summary[cat_summary['amount'] > 0].sort_values('amount', ascending=False)
+
+if not cat_summary.empty:
+    # A Sankey requires a list of nodes. 
+    # Index 0 is the Root ("Total Expenses"), and Indices 1 through N are the categories.
+    labels = ["Total Expenses"] + cat_summary['Category_Name'].tolist()
+    
+    # The 'source' for all flows is 0 (Total Expenses)
+    source = [0] * len(cat_summary)
+    
+    # The 'target' for the flows are the category indices (1 through N)
+    target = list(range(1, len(cat_summary) + 1))
+    
+    # The 'value' is the width of the flow lines
+    values = cat_summary['amount'].tolist()
+
+    # Build the Plotly Sankey figure
+    fig = go.Figure(data=[go.Sankey(
+        valueformat="$,.2f", # Automatically formats the hover tooltips as currency
+        node=dict(
+            pad=20,
+            thickness=20,
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            label=labels,
+            color="#dc3545" # Bootstrap red to match the Expenses theme
+        ),
+        link=dict(
+            source=source,
+            target=target,
+            value=values,
+            color="rgba(220, 53, 69, 0.3)" # Transparent red for the sweeping flows
+        )
+    )])
+
+    # Strip out the background so it seamlessly matches your Streamlit dark/light theme
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=20, b=20),
+        height=700, # Massive height boost so labels don't bunch up
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(size=13) # Bumped up the font size slightly for normal page zoom
     )
 
-    st.altair_chart(bar_chart, width="stretch")
+    # Plotly figures still use use_container_width in Streamlit, unlike dataframes!
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("No expenses found to chart for this month.")
 
-with col2:
-    st.subheader("Transaction Log")
-    display_df = df_expenses[['date', 'Payee_Name', 'Category_Name', 'amount']].copy()
-    display_df = display_df.sort_values(by='date', ascending=False)
-    display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
-    st.dataframe(display_df, width="stretch", hide_index=True)
+st.markdown("---")
+
+# --- Transaction Log ---
+st.subheader("Transaction Log")
+display_df = df_expenses[['date', 'Payee_Name', 'Category_Name', 'amount']].copy()
+display_df = display_df.sort_values(by='date', ascending=False)
+display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
+
+# Using width="stretch" here to respect the Streamlit deprecation fixes we made earlier
+st.dataframe(display_df, width="stretch", hide_index=True)
 
 # --- TFSA Contributions (YTD) ---
 st.markdown("---")
