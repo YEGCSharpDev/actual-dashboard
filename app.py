@@ -5,14 +5,15 @@ All data fetching lives in data.py; all business logic lives in transforms.py.
 This file is responsible only for layout, widgets, and rendering.
 """
 
+import calendar as cal_lib
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
 
 import altair as alt
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from dateutil.relativedelta import relativedelta
 
 from data import (
     fetch_all_dashboard_data,
@@ -321,17 +322,20 @@ with tab_overview:
     tracked_categories = st.secrets["categories"].get("budget_tracking", [])
 
     if tracked_categories:
-        # If multiple months are selected, use the latest month in the range for budget tracking.
-        db_month_str = df_filtered["date"].max().strftime("%Y-%m")
-        monthly_budgets = get_month_budgets(all_data, db_month_str)
+        if not df_filtered.empty:
+            # P2-7: Guard NaT crash by ensuring df_filtered is not empty
+            db_month_str = df_filtered["date"].max().strftime("%Y-%m")
+            monthly_budgets = get_month_budgets(all_data, db_month_str)
 
-        for cat in tracked_categories:
-            budgeted = monthly_budgets.get(cat, 0.0)
-            spent = df_expenses[df_expenses["Category_Name"] == cat]["amount"].sum()
-            st.markdown(
-                build_category_bar_html(cat, spent, budgeted),
-                unsafe_allow_html=True,
-            )
+            for cat in tracked_categories:
+                budgeted = monthly_budgets.get(cat, 0.0)
+                spent = df_expenses[df_expenses["Category_Name"] == cat]["amount"].sum()
+                st.markdown(
+                    build_category_bar_html(cat, spent, budgeted),
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.info("No data selected for budget tracking.")
     else:
         st.info("No budget tracking categories defined in secrets.toml.")
 
@@ -340,54 +344,57 @@ with tab_overview:
     # ── Sankey Diagram ───────────────────────────────────────────────────────────
     st.subheader("Monthly Cashflow (Income & Expenses)")
 
-    inc_summary = (
-        df_income.groupby("Category_Name")["amount"]
-        .sum()
-        .reset_index()
-        .query("amount > 0")
-        .sort_values("amount", ascending=False)
-    )
-    exp_summary = (
-        df_expenses.groupby("Category_Name")["amount"]
-        .sum()
-        .reset_index()
-        .query("amount > 0")
-        .sort_values("amount", ascending=False)
-    )
-
-    sankey = build_sankey_data(inc_summary, exp_summary)
-
-    if sankey:
-        fig = go.Figure(
-            data=[
-                go.Sankey(
-                    valueformat="$,.2f",
-                    node=dict(
-                        pad=20,
-                        thickness=20,
-                        line=dict(color="rgba(0,0,0,0)", width=0),
-                        label=sankey["display_labels"],
-                        color=sankey["node_colors"],
-                        hovertemplate="%{label}<br>Total: %{value:$,.2f}<extra></extra>",
-                    ),
-                    link=dict(
-                        source=sankey["source"],
-                        target=sankey["target"],
-                        value=sankey["values"],
-                        color=sankey["link_colors"],
-                        hovertemplate="Source: %{source.label}<br>Target: %{target.label}<br>Amount: %{value:$,.2f}<extra></extra>",
-                    ),
-                )
-            ]
+    if not df_income.empty or not df_expenses.empty:
+        inc_summary = (
+            df_income.groupby("Category_Name")["amount"]
+            .sum()
+            .reset_index()
+            .query("amount > 0")
+            .sort_values("amount", ascending=False)
         )
-        fig.update_layout(
-            margin=dict(l=0, r=0, t=20, b=20),
-            height=SANKEY_HEIGHT_PX,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(size=13),
+        exp_summary = (
+            df_expenses.groupby("Category_Name")["amount"]
+            .sum()
+            .reset_index()
+            .query("amount > 0")
+            .sort_values("amount", ascending=False)
         )
-        st.plotly_chart(fig, width="stretch")
+
+        sankey = build_sankey_data(inc_summary, exp_summary)
+
+        if sankey:
+            fig = go.Figure(
+                data=[
+                    go.Sankey(
+                        valueformat="$,.2f",
+                        node=dict(
+                            pad=20,
+                            thickness=20,
+                            line=dict(color="rgba(0,0,0,0)", width=0),
+                            label=sankey["display_labels"],
+                            color=sankey["node_colors"],
+                            hovertemplate="%{label}<br>Total: %{value:$,.2f}<extra></extra>",
+                        ),
+                        link=dict(
+                            source=sankey["source"],
+                            target=sankey["target"],
+                            value=sankey["values"],
+                            color=sankey["link_colors"],
+                            hovertemplate="Source: %{source.label}<br>Target: %{target.label}<br>Amount: %{value:$,.2f}<extra></extra>",
+                        ),
+                    )
+                ]
+            )
+            fig.update_layout(
+                margin=dict(l=0, r=0, t=20, b=20),
+                height=SANKEY_HEIGHT_PX,
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(size=13),
+            )
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("No income or expense data found to chart for this month.")
     else:
         st.info("No income or expense data found to chart for this month.")
 
@@ -403,8 +410,10 @@ with tab_overview:
 with tab_net_worth:
     st.subheader("Historical Net Worth")
     # All transactions already fetched in all_data
-    current_assets = sum(acc.get("balance", 0) for acc in all_data.get("accounts", []) if not acc.get("closed")) / 100.0
+    # Correctness Fix P1-3: Anchor on current known balances
+    current_assets = round(sum(acc.get("balance", 0) for acc in all_data.get("accounts", []) if not acc.get("closed")) / 100.0, 2)
     df_nw = build_net_worth_series(all_data["transactions"], current_assets)
+
 
     if not df_nw.empty:
         # Display current net worth
@@ -412,15 +421,16 @@ with tab_net_worth:
         prev_nw = df_nw.iloc[-2]["net_worth"] if len(df_nw) > 1 else current_nw
         nw_delta = current_nw - prev_nw
         
-        # Streamlit sometimes misinterprets signage if currency symbols are in the string
-        # Force the color based on the raw numeric delta
+        # P2-8: Pass numeric delta to st.metric for robust formatting
+        # P2-6: Label relative to previous month
         nw_delta_color = "normal" if nw_delta >= 0 else "inverse"
         
         st.metric(
             "Current Net Worth", 
             f"${current_nw:,.2f}", 
-            delta=f"${nw_delta:,.2f} this month",
-            delta_color=nw_delta_color
+            delta=nw_delta,
+            delta_color=nw_delta_color,
+            help="Change vs previous month-end balance."
         )
 
         # Net Worth Line Chart
@@ -660,6 +670,8 @@ with tab_advanced:
     df_all = all_data["transactions"]
     
     if not df_all.empty:
+        # current_date_ref is already defined early at top of script
+
         # Current MTD
         curr_month_mask = (df_all["date"].dt.year == current_date_ref.year) & (df_all["date"].dt.month == current_date_ref.month)
         df_curr_month = df_all[curr_month_mask & ~df_all["is_income"].eq(True)]
@@ -682,15 +694,17 @@ with tab_advanced:
             st.metric(
                 "Month-over-Month (MTD)", 
                 f"${mom_metrics['current_mtd']:,.2f}", 
-                delta=f"{mom_metrics['pct_change']:.1f}% vs last month",
-                delta_color="inverse"
+                delta=mom_metrics['pct_change'], # P2-8: Numeric delta
+                delta_color="inverse",
+                help="Normalized for partial month comparison."
             )
         with col_yoy:
             st.metric(
                 "Year-over-Year (MTD)", 
                 f"${yoy_metrics['current_mtd']:,.2f}", 
-                delta=f"{yoy_metrics['pct_change']:.1f}% vs last year",
-                delta_color="inverse"
+                delta=yoy_metrics['pct_change'], # P2-8: Numeric delta
+                delta_color="inverse",
+                help="Normalized for partial month comparison."
             )
             
         # Comparison Chart
@@ -711,7 +725,6 @@ with tab_advanced:
         real_today = datetime.now()
         pacing_date = min(real_today, current_date_ref)
         
-        import calendar as cal_lib
         _, last_day = cal_lib.monthrange(pacing_date.year, pacing_date.month)
         time_elapsed_pct = pacing_date.day / last_day
         
@@ -751,7 +764,7 @@ with tab_advanced:
             
         # Get current net worth as starting point
         # Use anchored balance from accounts table for accuracy
-        current_assets = sum(acc.get("balance", 0) for acc in all_data.get("accounts", []) if not acc.get("closed")) / 100.0
+        current_assets = round(sum(acc.get("balance", 0) for acc in all_data.get("accounts", []) if not acc.get("closed")) / 100.0, 2)
         
         months_house = calculate_milestone_months(current_assets, extra_savings, house_target, expected_return)
         months_retire = calculate_milestone_months(current_assets, extra_savings, retire_target, expected_return)

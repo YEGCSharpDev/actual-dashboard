@@ -7,6 +7,7 @@ Pure functions that operate on DataFrames and dicts — no Streamlit UI calls.
 import ast
 import calendar
 import html
+import math
 import operator
 from datetime import datetime
 
@@ -72,10 +73,13 @@ def split_income_expenses(
     """
     Split a filtered transaction DataFrame into income and expense frames.
 
-    Income amounts are flipped back to positive (they were made negative by the
-    global sign conversion in the data layer).
+    Invariant: The 'amount' column follows the 'cost_to_user' convention:
+    - Positive values represent Expenses (cash outflow).
+    - Negative values represent Income (cash inflow).
+    (P2-11)
     """
     df_income = df[df["is_income"].eq(True)].copy()
+    # Flip back to positive for UI display
     df_income["amount"] = df_income["amount"] * -1
 
     df_expenses = df[~df["is_income"].eq(True)].copy()
@@ -89,7 +93,8 @@ def build_net_worth_series(df_all: pd.DataFrame, current_balance: float) -> pd.D
     known current total balance. (Correctness Fix: P1-3)
 
     Args:
-        df_all: DataFrame containing all transactions from all accounts.
+        df_all: DataFrame containing all transactions from all accounts 
+                (on-budget + off-budget). (P2-12)
                 Expects 'amount_dollars' where Positive = Inflow.
         current_balance: The current total balance of all active accounts in dollars.
 
@@ -113,13 +118,11 @@ def build_net_worth_series(df_all: pd.DataFrame, current_balance: float) -> pd.D
 
     # To anchor the history, we calculate the cumulative sum of deltas backward
     # from the current known balance.
-    # Logic: current_balance = history_start + sum(deltas)
-    # So: history_start = current_balance - sum(deltas)
-    # Then: history[i] = history_start + sum(deltas[:i])
     total_delta = monthly["amount_dollars"].sum()
     history_start = current_balance - total_delta
     
-    monthly["net_worth"] = history_start + monthly["amount_dollars"].cumsum()
+    monthly["net_worth"] = (history_start + monthly["amount_dollars"].cumsum()).round(2)
+    monthly["amount_dollars"] = monthly["amount_dollars"].round(2)
 
     # Rename columns for clarity
     monthly = monthly.rename(columns={"amount_dollars": "monthly_change"})
@@ -158,10 +161,10 @@ def calculate_mom_metrics(
     pct_change = (delta / abs(prev_mtd)) * 100 if prev_mtd != 0 else 0.0
     
     return {
-        "current_mtd": current_mtd,
-        "prev_mtd": prev_mtd,
-        "delta": delta,
-        "pct_change": pct_change
+        "current_mtd": round(current_mtd, 2),
+        "prev_mtd": round(prev_mtd, 2),
+        "delta": round(delta, 2),
+        "pct_change": round(pct_change, 2)
     }
 
 
@@ -182,10 +185,10 @@ def calculate_yoy_metrics(
     pct_change = (delta / abs(last_year_mtd)) * 100 if last_year_mtd != 0 else 0.0
     
     return {
-        "current_mtd": current_mtd,
-        "last_year_mtd": last_year_mtd,
-        "delta": delta,
-        "pct_change": pct_change
+        "current_mtd": round(current_mtd, 2),
+        "last_year_mtd": round(last_year_mtd, 2),
+        "delta": round(delta, 2),
+        "pct_change": round(pct_change, 2)
     }
 
 
@@ -203,7 +206,7 @@ def calculate_budget_pacing(spent: float, budget: float, current_date: datetime)
     time_pct = day_cutoff / last_day
     spent_pct = spent / budget
     
-    return spent_pct - time_pct
+    return round(spent_pct - time_pct, 4)
 
 
 def calculate_milestone_months(
@@ -232,7 +235,6 @@ def calculate_milestone_months(
         return int(needed / monthly_savings) + (1 if needed % monthly_savings > 0 else 0)
     
     # Compound interest formula
-    import math
     try:
         numerator = target_amount + (monthly_savings / monthly_rate)
         denominator = current_balance + (monthly_savings / monthly_rate)
