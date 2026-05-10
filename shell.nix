@@ -17,6 +17,7 @@ pkgs.mkShell {
     # Fix npm/npx path issues on Nix
     export NPM_CONFIG_PREFIX=$PWD/.npm-global
     export PATH=$PWD/.npm-global/bin:$PATH
+    export NODE_PATH=$PWD/.npm-global/lib/node_modules:$NODE_PATH
     export npm_config_cache=$PWD/.npm-cache
     
     # Ensure the full structure exists
