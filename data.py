@@ -217,6 +217,31 @@ def fetch_investment_balances() -> dict:
     return balances
 
 
+def _get_categories_from_budget_data(data: any) -> list:
+    """
+    Extract a flat list of category objects from various Actual CLI budget formats.
+    Handles both list-of-groups and root-object-with-categories responses.
+    """
+    if isinstance(data, list):
+        # Format: list of category groups
+        cats = []
+        for group in data:
+            if isinstance(group, dict):
+                cats.extend(group.get("categories", []))
+        return cats
+    elif isinstance(data, dict):
+        # Format: root dict with 'categories' or 'categoryGroups'
+        if "categories" in data:
+            return data["categories"]
+        if "categoryGroups" in data:
+            cats = []
+            for group in data["categoryGroups"]:
+                if isinstance(group, dict):
+                    cats.extend(group.get("categories", []))
+            return cats
+    return []
+
+
 @st.cache_data(ttl=300)
 def fetch_underbudgeted_amounts() -> tuple[dict, list, str | None]:
     """
@@ -232,18 +257,18 @@ def fetch_underbudgeted_amounts() -> tuple[dict, list, str | None]:
 
     try:
         for m in months_str:
-            # Still one call per month as 'budgets' is not a queryable table
-            rows = run_actual_query(["budgets", "month", m])
+            data = run_actual_query(["budgets", "month", m])
+            categories = _get_categories_from_budget_data(data)
             
             underfunded_total = 0.0
-            # CLI 'budgets month' returns full categoryGroups structure
-            for group in rows:
-                for cat in group.get("categories", []):
-                    # In this CLI command, amounts are usually in integer cents
-                    goal = cat.get("goal", 0)
-                    budgeted = cat.get("budgeted", 0)
-                    if budgeted < goal:
-                        underfunded_total += (goal - budgeted) / 100.0
+            for cat in categories:
+                # In Actual, a category is underfunded if budgeted < goal
+                # We check for both 'goal' and 'target' as field names can vary
+                goal = cat.get("goal") or cat.get("target") or 0
+                budgeted = cat.get("budgeted", 0)
+                
+                if budgeted < goal:
+                    underfunded_total += (goal - budgeted) / 100.0
             
             results[m.replace("-", "")] = underfunded_total
     except Exception as e:
@@ -262,10 +287,10 @@ def fetch_month_budgets(month_str: str) -> dict:
 
     budgets: dict[str, float] = {}
     try:
-        rows = run_actual_query(["budgets", "month", month_str])
-        for group in rows:
-            for cat in group.get("categories", []):
-                budgets[cat["name"]] = cat.get("budgeted", 0) / 100.0
+        data = run_actual_query(["budgets", "month", month_str])
+        categories = _get_categories_from_budget_data(data)
+        for cat in categories:
+            budgets[cat["name"]] = cat.get("budgeted", 0) / 100.0
     except Exception as e:
         st.warning(f"Failed to fetch category budgets: {e}")
 
