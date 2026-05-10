@@ -105,7 +105,7 @@ def render_forecast_chart(
     ).encode(text="Label:N")
 
     chart = (line + text).properties(height=FORECAST_CHART_HEIGHT_PX).interactive()
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
 
 
 def render_forecast_section(
@@ -369,7 +369,7 @@ with tab_overview:
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(size=13),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     else:
         st.info("No income or expense data found to chart for this month.")
 
@@ -380,7 +380,7 @@ with tab_overview:
     display_df = df_filtered[["date", "Payee_Name", "Category_Name", "amount"]].copy()
     display_df = display_df.sort_values(by="date", ascending=False)
     display_df["date"] = display_df["date"].dt.strftime("%Y-%m-%d")
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(display_df, width="stretch", hide_index=True)
 
 with tab_net_worth:
     st.subheader("Historical Net Worth")
@@ -420,7 +420,7 @@ with tab_net_worth:
             .interactive()
         )
 
-        st.altair_chart(nw_chart, use_container_width=True)
+        st.altair_chart(nw_chart, width="stretch")
     else:
         st.info("Insufficient data to calculate net worth history.")
 
@@ -490,7 +490,7 @@ with tab_investments:
             .interactive()
         )
 
-        st.altair_chart(area_chart, use_container_width=True)
+        st.altair_chart(area_chart, width="stretch")
     else:
         st.info("No TFSA contributions found for this year yet.")
 
