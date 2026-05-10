@@ -411,11 +411,15 @@ with tab_net_worth:
         prev_nw = df_nw.iloc[-2]["net_worth"] if len(df_nw) > 1 else current_nw
         nw_delta = current_nw - prev_nw
         
+        # Streamlit sometimes misinterprets signage if currency symbols are in the string
+        # Force the color based on the raw numeric delta
+        nw_delta_color = "normal" if nw_delta >= 0 else "inverse"
+        
         st.metric(
             "Current Net Worth", 
             f"${current_nw:,.2f}", 
             delta=f"${nw_delta:,.2f} this month",
-            delta_color="normal"
+            delta_color=nw_delta_color
         )
 
         # Net Worth Line Chart
