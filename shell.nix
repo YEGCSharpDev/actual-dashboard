@@ -27,8 +27,8 @@ pkgs.mkShell {
     echo "Node $(node --version)"
     
     if ! command -v actual &> /dev/null; then
-      echo "Installing Actual CLI locally..."
-      npm install -g @actual-app/cli --quiet
+      echo "Installing Actual dependencies locally..."
+      npm install -g @actual-app/cli @actual-app/api --quiet
     fi
 
     echo "Actual CLI $(actual --version)"
