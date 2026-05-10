@@ -15,8 +15,47 @@ import streamlit as st
 from dateutil.relativedelta import relativedelta
 
 
-# --- Concurrency Control ---
+# --- Concurrency & Path Control ---
 _cli_lock = threading.Lock()
+_cached_db_path = None # P2-3: Cache the resolved db.sqlite path
+
+
+def normalize_transactions(raw_txns: list) -> pd.DataFrame:
+    """
+    Standardize raw transactions from the API into a consistent DataFrame. (P2-10)
+    
+    Sign Invariant: (P2-11)
+    - 'amount_dollars': Inflow = Positive, Outflow = Negative.
+    - 'amount': Inflow = Negative, Outflow = Positive (Cost to User convention).
+    """
+    if not raw_txns:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(raw_txns)
+    
+    # Map column names for compatibility
+    df = df.rename(columns={
+        "payee.name": "Payee_Name",
+        "category.name": "Category_Name",
+        "category.id": "category",
+        "category.is_income": "is_income",
+        "category.group.name": "Group_Name"
+    })
+
+    # Amount conversion constants
+    CENTS_DIVISOR = -100.0
+    
+    # Conversions
+    df["amount_dollars"] = df["amount"] / 100.0
+    df["amount"] = df["amount"] / CENTS_DIVISOR # Standard expense signage
+    
+    # Final cleanup
+    df["Payee_Name"] = df["Payee_Name"].fillna("Unknown")
+    df["Category_Name"] = df["Category_Name"].fillna("Uncategorized")
+    df["Group_Name"] = df["Group_Name"].fillna("Other")
+    df["date"] = pd.to_datetime(df["date"])
+    
+    return df
 
 
 @st.cache_data(ttl=3600) # Cached for 1 hour
@@ -24,28 +63,27 @@ def fetch_all_dashboard_data() -> dict:
     """
     Invokes the Node.js sidecar to fetch all budget data in a single session.
     """
+    global _cached_db_path
+    _cached_db_path = None # Invalidate path cache on fresh fetch
+    
     data_dir = os.path.join(os.getcwd(), ".actual-data")
     os.makedirs(data_dir, exist_ok=True)
     
-    # Use official Actual CLI environment variable names for the sidecar
-    env = {
-        **os.environ,
-        "ACTUAL_SERVER_URL": st.secrets["ACTUAL_SERVER_URL"],
-        "ACTUAL_PASSWORD": st.secrets["ACTUAL_PASSWORD"],
-        "ACTUAL_SYNC_ID": st.secrets["ACTUAL_SYNC_ID"],
-        "ACTUAL_DATA_DIR": data_dir,
-    }
+    args = [
+        "node", "actual-helper.js",
+        "--server-url", st.secrets["ACTUAL_SERVER_URL"],
+        "--password", st.secrets["ACTUAL_PASSWORD"],
+        "--sync-id", st.secrets["ACTUAL_SYNC_ID"],
+        "--data-dir", data_dir
+    ]
     
     if "ACTUAL_ENCRYPTION_PASSWORD" in st.secrets:
-        env["ACTUAL_ENCRYPTION_PASSWORD"] = st.secrets["ACTUAL_ENCRYPTION_PASSWORD"]
-
-    args = ["node", "actual-helper.js"]
+        args.extend(["--encryption-password", st.secrets["ACTUAL_ENCRYPTION_PASSWORD"]])
 
     with _cli_lock:
         try:
             result = subprocess.run(
                 args,
-                env=env,
                 capture_output=True,
                 text=True,
                 check=True
@@ -62,28 +100,8 @@ def fetch_all_dashboard_data() -> dict:
             raw_json = output.split(start_marker)[1].split(end_marker)[0].strip()
             res = json.loads(raw_json)
             
-            # Post-process transactions into DataFrame
-            if res.get("transactions"):
-                df = pd.DataFrame(res["transactions"])
-                # Map column names for compatibility
-                df = df.rename(columns={
-                    "payee.name": "Payee_Name",
-                    "category.name": "Category_Name",
-                    "category.id": "category",
-                    "category.is_income": "is_income",
-                    "category.group.name": "Group_Name"
-                })
-                # Conversions
-                df["amount_dollars"] = df["amount"] / 100.0
-                df["amount"] = df["amount"] / -100.0 # Standard expense signage
-                df["Payee_Name"] = df["Payee_Name"].fillna("Unknown")
-                df["Category_Name"] = df["Category_Name"].fillna("Uncategorized")
-                df["Group_Name"] = df["Group_Name"].fillna("Other")
-                df["date"] = pd.to_datetime(df["date"])
-                res["transactions"] = df
-            else:
-                res["transactions"] = pd.DataFrame()
-                
+            # Post-process transactions into DataFrame (P2-10)
+            res["transactions"] = normalize_transactions(res.get("transactions", []))
             res["error"] = None
             return res
             
@@ -100,19 +118,21 @@ def query_local_db(query: str, params: tuple = ()) -> list:
     """
     Run a read-only SQL query against the locally synchronized Actual database.
     """
-    data_dir = os.path.join(os.getcwd(), ".actual-data")
-    # Find the first db.sqlite in the data directory (Actual API nested structure)
-    db_path = None
-    for root, dirs, files in os.walk(data_dir):
-        if "db.sqlite" in files:
-            db_path = os.path.join(root, "db.sqlite")
-            break
+    global _cached_db_path
+    
+    if not _cached_db_path:
+        data_dir = os.path.join(os.getcwd(), ".actual-data")
+        # P2-3: Find and cache the db.sqlite path
+        for root, dirs, files in os.walk(data_dir):
+            if "db.sqlite" in files:
+                _cached_db_path = os.path.join(root, "db.sqlite")
+                break
             
-    if not db_path:
+    if not _cached_db_path:
         raise FileNotFoundError("Local Actual database (db.sqlite) not found. Run sync first.")
 
     # Use a read-only connection
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"file:{_cached_db_path}?mode=ro", uri=True)
     try:
         cursor = conn.cursor()
         cursor.execute(query, params)
@@ -153,7 +173,7 @@ def get_investment_balances(all_data: dict) -> dict:
     return balances
 
 
-@st.cache_data(ttl=300)
+# Redundant @st.cache_data removed per P2-2
 def fetch_underbudgeted_amounts(all_data: dict) -> tuple[dict, list, str | None]:
     """
     Calculate underfunded amounts by querying the 'zero_budgets' view in the local SQLite DB.
@@ -170,7 +190,6 @@ def fetch_underbudgeted_amounts(all_data: dict) -> tuple[dict, list, str | None]
 
     try:
         for m in months_str:
-            # Replicating the legacy SQL logic that works perfectly with Actual's internal view
             rows = query_local_db(
                 """
                 SELECT COALESCE(SUM(zero_budgets.goal - zero_budgets.amount), 0) / 100.0

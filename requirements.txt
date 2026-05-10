@@ -1,6 +1,6 @@
-streamlit
-pandas
-altair
-plotly
-python-dateutil
-pytest
+streamlit~=1.35.0
+pandas~=2.2.0
+altair~=5.3.0
+plotly~=5.22.0
+python-dateutil~=2.9.0
+pytest~=8.2.0

@@ -2,7 +2,7 @@
 # ACTUAL BUDGET STREAMLIT DASHBOARD (PARAMETERIZED)
 # ==============================================================================
 # 
-# STEP 0: This container needs https://github.com/jhonderson/actual-http-api running for REST API calls.
+# STEP 0: This container uses a Node.js sidecar with the official Actual API.
 #
 # STEP 1: In the mounted directory create secrets.toml file
 #
