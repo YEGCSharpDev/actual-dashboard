@@ -103,7 +103,7 @@ def fetch_actual_data() -> pd.DataFrame:
             "query", "run", 
             "--table", "transactions",
             "--filter", json.dumps(q_filter),
-            "--select", "date,amount,account,account.name,payee.name,category.id,category.name,is_income"
+            "--select", "date,amount,account,account.name,payee.name,category.id,category.name,category.is_income"
         ])
     except Exception as e:
         st.error(f"Failed to batch fetch transactions: {e}")
@@ -125,7 +125,8 @@ def fetch_actual_data() -> pd.DataFrame:
     df = df.rename(columns={
         "payee.name": "Payee_Name",
         "category.name": "Category_Name",
-        "category.id": "category"
+        "category.id": "category",
+        "category.is_income": "is_income"
     })
 
     # Convert from negative-integer-cents to dollars
