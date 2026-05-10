@@ -60,6 +60,7 @@ services:
       - "8501:8501"
     volumes:
       - /mnt/Tank/AppData/config/Actual-Dashboard:/app/.streamlit:ro
+      - /mnt/Tank/AppData/config/Actual-Dashboard/data:/app/.actual-data
     environment:
       - PUID=568
       - PGID=3002
