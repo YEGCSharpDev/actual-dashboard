@@ -41,8 +41,6 @@ def run_actual_query(args: list) -> any:
 
     with _cli_lock:
         try:
-            # Use 'actual' directly instead of 'npx' for speed and to avoid extra checks
-            # This works because we pre-install it in Docker and Nix shell
             result = subprocess.run(
                 base_args + args,
                 capture_output=True,
@@ -53,7 +51,6 @@ def run_actual_query(args: list) -> any:
                 return []
             return json.loads(result.stdout)
         except subprocess.CalledProcessError as e:
-            # Check for rate limiting to provide a better UI message
             err_msg = e.stderr or ""
             if "too-many-requests" in err_msg:
                 st.error("Actual server is rate-limiting requests. Please wait a minute and refresh.")
@@ -79,7 +76,7 @@ def fetch_actual_data() -> pd.DataFrame:
     """
     current_year = datetime.now().year
     
-    # 1. Fetch metadata in one go (already fast)
+    # 1. Fetch metadata in one go
     try:
         accounts = run_actual_query(["accounts", "list"])
     except Exception as e:
@@ -92,7 +89,6 @@ def fetch_actual_data() -> pd.DataFrame:
     }
 
     # 2. Batch fetch transactions for ALL accounts for the year
-    # We use AQL to get category and payee names directly via joins
     try:
         # Filter is_parent: false to avoid double counting split transactions
         q_filter = {
@@ -149,7 +145,7 @@ def fetch_all_transactions() -> pd.DataFrame:
     Used for historical Net Worth and Advanced Analytics.
     """
     try:
-        # Fetch only non-closed accounts to speed up potential future joins
+        # Fetch only non-closed accounts
         accounts = run_actual_query(["accounts", "list"])
         active_ids = {acc["id"] for acc in accounts if not acc.get("closed")}
         
@@ -185,7 +181,7 @@ def fetch_all_transactions() -> pd.DataFrame:
     # Standardize signage (Positive = Inflow, Negative = Outflow)
     df["amount_dollars"] = df["amount"] / 100.0
     
-    # Compat: also provide 'amount' in positive-expense format for some logic
+    # Compat: also provide 'amount' in positive-expense format
     df["amount"] = df["amount"] / CENTS_DIVISOR
     
     # Final cleanup
@@ -201,7 +197,6 @@ def fetch_all_transactions() -> pd.DataFrame:
 def fetch_investment_balances() -> dict:
     """
     Fetch current balances for off-budget investment accounts (RESP, RRSP, TFSA).
-    Uses data from the accounts list directly to avoid extra CLI calls.
     """
     try:
         accounts_res = run_actual_query(["accounts", "list"])
@@ -239,17 +234,14 @@ def fetch_investment_balances() -> dict:
 def _get_categories_from_budget_data(data: any) -> list:
     """
     Extract a flat list of category objects from various Actual CLI budget formats.
-    Handles both list-of-groups and root-object-with-categories responses.
     """
     if isinstance(data, list):
-        # Format: list of category groups
         cats = []
         for group in data:
             if isinstance(group, dict):
                 cats.extend(group.get("categories", []))
         return cats
     elif isinstance(data, dict):
-        # Format: root dict with 'categories' or 'categoryGroups'
         if "categories" in data:
             return data["categories"]
         if "categoryGroups" in data:
@@ -261,11 +253,44 @@ def _get_categories_from_budget_data(data: any) -> list:
     return []
 
 
+def _parse_monthly_goal(goal_def: str | None) -> float:
+    """
+    Parse the Actual Budget JSON goal definition to find the monthly target amount.
+    Returns the target in DOLLARS.
+    """
+    if not goal_def:
+        return 0.0
+    
+    try:
+        rules = json.loads(goal_def)
+        if not isinstance(rules, list):
+            return 0.0
+        
+        # We take the maximum goal found in the rules (simple monthly is most common)
+        max_goal = 0.0
+        for rule in rules:
+            # Rule types: 'simple' (monthly), 'by' (goal by date)
+            if rule.get("type") == "simple":
+                # 'monthly' field is in integer cents
+                amt = rule.get("monthly", 0)
+                max_goal = max(max_goal, amt / 100.0)
+            elif rule.get("type") == "by":
+                # 'amount' is the total goal, we'd ideally need to know how 
+                # many months are left to reach it, but for simplicity, 
+                # we'll look for monthly targets or use a heuristic.
+                # If there's a monthly target assigned to the 'by' goal:
+                amt = rule.get("amount", 0)
+                # (Simple heuristic: if no monthly is found, ignore complex math for now)
+        
+        return max_goal
+    except Exception:
+        return 0.0
+
+
 @st.cache_data(ttl=300)
 def fetch_underbudgeted_amounts() -> tuple[dict, list, str | None]:
     """
-    For the current and next two months, calculate the total underfunded
-    amount across all budget categories.
+    Calculate total underfunded amount by parsing goal_def metadata.
     """
     now = datetime.now()
     target_months = [now + relativedelta(months=i) for i in range(3)]
@@ -275,19 +300,37 @@ def fetch_underbudgeted_amounts() -> tuple[dict, list, str | None]:
     error_msg = None
 
     try:
+        # 1. Fetch category metadata (goals) using ActualQL
+        cat_metadata = run_actual_query([
+            "query", "run", 
+            "--table", "categories",
+            "--select", "id,name,goal_def"
+        ])
+        # Map ID to Parsed Goal
+        goal_map = {c["id"]: _parse_monthly_goal(c.get("goal_def")) for c in cat_metadata}
+
         for m in months_str:
+            # 2. Fetch assignments for the month
             data = run_actual_query(["budgets", "month", m])
             categories = _get_categories_from_budget_data(data)
             
             underfunded_total = 0.0
             for cat in categories:
-                # In Actual, a category is underfunded if budgeted < goal
-                # We check for both 'goal' and 'target' as field names can vary
-                goal = cat.get("goal") or cat.get("target") or 0
-                budgeted = cat.get("budgeted", 0)
+                cat_id = cat.get("id")
+                target = goal_map.get(cat_id, 0.0)
+                budgeted = cat.get("budgeted", 0) / 100.0
                 
-                if budgeted < goal:
-                    underfunded_total += (goal - budgeted) / 100.0
+                # Check for underfunding
+                if budgeted < target:
+                    underfunded_total += (target - budgeted)
+                
+                # ALSO: Check for carried over overspending (Negative Balance)
+                # In Actual, a negative balance in a future month is also underfunded
+                balance = cat.get("balance", 0) / 100.0
+                if balance < 0 and budgeted >= target:
+                    # If already budgeted to target but balance still negative 
+                    # due to rollover, the remaining negative is underfunded.
+                    underfunded_total += abs(balance)
             
             results[m.replace("-", "")] = underfunded_total
     except Exception as e:
