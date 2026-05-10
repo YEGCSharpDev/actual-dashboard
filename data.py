@@ -5,6 +5,7 @@ Handles all API communication via Node.js Sidecar (Actual API) and raw data retr
 """
 import json
 import os
+import sqlite3
 import subprocess
 import threading
 from datetime import datetime
@@ -89,7 +90,34 @@ def fetch_all_dashboard_data() -> dict:
             return {"error": str(e), "transactions": pd.DataFrame()}
 
 
-# --- Data Extractors (Logic-only, no CLI calls) ---
+# --- SQLite Helpers (for precise analytical queries) ---
+
+def query_local_db(query: str, params: tuple = ()) -> list:
+    """
+    Run a read-only SQL query against the locally synchronized Actual database.
+    """
+    data_dir = os.path.join(os.getcwd(), ".actual-data")
+    # Find the first db.sqlite in the data directory (Actual API nested structure)
+    db_path = None
+    for root, dirs, files in os.walk(data_dir):
+        if "db.sqlite" in files:
+            db_path = os.path.join(root, "db.sqlite")
+            break
+            
+    if not db_path:
+        raise FileNotFoundError("Local Actual database (db.sqlite) not found. Run sync first.")
+
+    # Use a read-only connection
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+# --- Data Extractors ---
 
 def get_onbudget_transactions(all_data: dict) -> pd.DataFrame:
     df = all_data.get("transactions", pd.DataFrame())
@@ -121,47 +149,10 @@ def get_investment_balances(all_data: dict) -> dict:
     return balances
 
 
-def _get_categories_from_budget_data(data: any) -> list:
-    if isinstance(data, list):
-        cats = []
-        for group in data:
-            if isinstance(group, dict):
-                cats.extend(group.get("categories", []))
-        return cats
-    elif isinstance(data, dict):
-        if "categories" in data:
-            return data["categories"]
-        if "categoryGroups" in data:
-            cats = []
-            for group in data["categoryGroups"]:
-                if isinstance(group, dict):
-                    cats.extend(group.get("categories", []))
-            return cats
-    return []
-
-
-def _parse_monthly_goal(goal_def: str | None) -> float:
-    if not goal_def:
-        return 0.0
-    try:
-        rules = json.loads(goal_def)
-        if not isinstance(rules, list): return 0.0
-        max_goal = 0.0
-        for rule in rules:
-            if rule.get("type") == "simple":
-                amt = rule.get("monthly", 0)
-                max_goal = max(max_goal, amt / 100.0)
-        return max_goal
-    except Exception:
-        return 0.0
-
-
+@st.cache_data(ttl=300)
 def fetch_underbudgeted_amounts(all_data: dict) -> tuple[dict, list, str | None]:
     """
-    For the current and next two months, calculate the total underfunded
-    amount across all budget categories.
-
-    Returns (results_dict, target_month_objects, error_message_or_None).
+    Calculate underfunded amounts by querying the 'zero_budgets' view in the local SQLite DB.
     """
     now = datetime.now()
     target_months = [now + relativedelta(months=i) for i in range(3)]
@@ -173,32 +164,45 @@ def fetch_underbudgeted_amounts(all_data: dict) -> tuple[dict, list, str | None]
     if error_msg:
         return results, target_months, error_msg
 
-    goal_map = {c["id"]: _parse_monthly_goal(c.get("goal_def")) for c in all_data.get("categories", [])}
+    try:
+        for m in months_str:
+            # Replicating the legacy SQL logic that works perfectly with Actual's internal view
+            rows = query_local_db(
+                """
+                SELECT COALESCE(SUM(zero_budgets.goal - zero_budgets.amount), 0) / 100.0
+                FROM zero_budgets
+                INNER JOIN categories ON categories.id = zero_budgets.category
+                WHERE month = ?
+                  AND amount < goal;
+                """,
+                (m,),
+            )
+            if rows and rows[0][0]:
+                results[m] = rows[0][0]
+    except Exception as e:
+        error_msg = f"Failed to fetch underbudgeted amounts from SQLite: {e}"
 
-    for m_obj in target_months:
-        m_str_api = m_obj.strftime("%Y-%m")
-        m_str_key = m_obj.strftime("%Y%m")
-        budget_data = all_data.get("budgets", {}).get(m_str_api, [])
-        categories = _get_categories_from_budget_data(budget_data)
-        
-        underfunded_total = 0.0
-        for cat in categories:
-            target = goal_map.get(cat.get("id"), 0.0)
-            budgeted = cat.get("budgeted", 0) / 100.0
-            
-            # Match the legacy SQL: SUM(goal - amount) where amount < goal
-            if budgeted < target:
-                underfunded_total += (target - budgeted)
-        
-        results[m_str_key] = underfunded_total
-        
-    return results, target_months, None
+    return results, target_months, error_msg
 
 
 def get_month_budgets(all_data: dict, month_str: str) -> dict:
+    """
+    Retrieves monthly assignments using the pre-fetched API data for speed.
+    """
     if len(month_str) == 6 and month_str.isdigit():
         month_str = f"{month_str[:4]}-{month_str[4:]}"
     
     budget_data = all_data.get("budgets", {}).get(month_str, [])
-    categories = _get_categories_from_budget_data(budget_data)
-    return {cat["name"]: cat.get("budgeted", 0) / 100.0 for cat in categories}
+    
+    # API parsing logic
+    cats = []
+    if isinstance(budget_data, list):
+        for group in budget_data:
+            if isinstance(group, dict): cats.extend(group.get("categories", []))
+    elif isinstance(budget_data, dict):
+        if "categories" in budget_data: cats = budget_data["categories"]
+        elif "categoryGroups" in budget_data:
+            for group in budget_data["categoryGroups"]:
+                if isinstance(group, dict): cats.extend(group.get("categories", []))
+                
+    return {cat["name"]: cat.get("budgeted", 0) / 100.0 for cat in cats}
