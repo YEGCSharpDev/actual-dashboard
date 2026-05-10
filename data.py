@@ -103,7 +103,7 @@ def fetch_actual_data() -> pd.DataFrame:
             "query", "run", 
             "--table", "transactions",
             "--filter", json.dumps(q_filter),
-            "--select", "date,amount,account,account.name,payee.name,category.id,category.name,category.is_income"
+            "--select", "date,amount,account,account.name,payee.name,category.id,category.name,category.is_income,category.group.name"
         ])
     except Exception as e:
         st.error(f"Failed to batch fetch transactions: {e}")
@@ -126,7 +126,8 @@ def fetch_actual_data() -> pd.DataFrame:
         "payee.name": "Payee_Name",
         "category.name": "Category_Name",
         "category.id": "category",
-        "category.is_income": "is_income"
+        "category.is_income": "is_income",
+        "category.group.name": "Group_Name"
     })
 
     # Convert from negative-integer-cents to dollars
@@ -135,6 +136,7 @@ def fetch_actual_data() -> pd.DataFrame:
     # Final cleanup
     df["Payee_Name"] = df["Payee_Name"].fillna("Unknown")
     df["Category_Name"] = df["Category_Name"].fillna("Uncategorized")
+    df["Group_Name"] = df["Group_Name"].fillna("Other")
     df["date"] = pd.to_datetime(df["date"])
     
     return df
@@ -144,7 +146,7 @@ def fetch_actual_data() -> pd.DataFrame:
 def fetch_all_transactions() -> pd.DataFrame:
     """
     Fetch ALL transactions from ALL accounts for the entire budget history in a single batch.
-    Used for historical Net Worth calculation.
+    Used for historical Net Worth and Advanced Analytics.
     """
     try:
         # Fetch only non-closed accounts to speed up potential future joins
@@ -157,7 +159,7 @@ def fetch_all_transactions() -> pd.DataFrame:
             "query", "run", 
             "--table", "transactions",
             "--filter", json.dumps(q_filter),
-            "--select", "date,amount,account"
+            "--select", "date,amount,account,account.name,payee.name,category.id,category.name,category.is_income,category.group.name"
         ])
     except Exception as e:
         st.error(f"Failed to batch fetch full history: {e}")
@@ -171,8 +173,25 @@ def fetch_all_transactions() -> pd.DataFrame:
     # Filter to active accounts
     df = df[df["account"].isin(active_ids)].copy()
     
+    # Map column names
+    df = df.rename(columns={
+        "payee.name": "Payee_Name",
+        "category.name": "Category_Name",
+        "category.id": "category",
+        "category.is_income": "is_income",
+        "category.group.name": "Group_Name"
+    })
+
     # Standardize signage (Positive = Inflow, Negative = Outflow)
     df["amount_dollars"] = df["amount"] / 100.0
+    
+    # Compat: also provide 'amount' in positive-expense format for some logic
+    df["amount"] = df["amount"] / CENTS_DIVISOR
+    
+    # Final cleanup
+    df["Payee_Name"] = df["Payee_Name"].fillna("Unknown")
+    df["Category_Name"] = df["Category_Name"].fillna("Uncategorized")
+    df["Group_Name"] = df["Group_Name"].fillna("Other")
     df["date"] = pd.to_datetime(df["date"])
     
     return df

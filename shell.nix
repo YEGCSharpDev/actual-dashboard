@@ -8,6 +8,7 @@ pkgs.mkShell {
       altair
       plotly
       python-dateutil
+      pytest
     ]))
     pkgs.nodejs
   ];

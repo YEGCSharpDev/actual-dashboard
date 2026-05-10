@@ -9,6 +9,7 @@ from datetime import datetime
 
 import altair as alt
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -31,6 +32,10 @@ from transforms import (
     build_net_worth_series,
     build_progress_bar_html,
     build_sankey_data,
+    calculate_budget_pacing,
+    calculate_milestone_months,
+    calculate_mom_metrics,
+    calculate_yoy_metrics,
     parse_math_input,
     split_income_expenses,
 )
@@ -194,10 +199,11 @@ elif not isinstance(date_range, tuple):
 df_filtered = df[mask].copy()
 
 # Tabs for different views
-tab_overview, tab_net_worth, tab_investments = st.tabs([
+tab_overview, tab_net_worth, tab_investments, tab_advanced = st.tabs([
     "📊 Monthly Overview", 
     "📈 Net Worth", 
-    "💰 Investments"
+    "💰 Investments",
+    "📉 Advanced Analytics"
 ])
 
 with tab_overview:
@@ -605,3 +611,158 @@ with tab_investments:
             )
         else:
             st.info("No TFSA accounts found.")
+
+with tab_advanced:
+    st.subheader("Advanced Analytics")
+    
+    # 1. Hierarchical Spending Breakdown
+    st.markdown("### Hierarchical Spending Breakdown")
+    df_expenses_only = df_filtered[~df_filtered["is_income"].eq(True)].copy()
+    if not df_expenses_only.empty:
+        fig_tree = px.treemap(
+            df_expenses_only,
+            path=["Group_Name", "Category_Name"],
+            values="amount",
+            color="amount",
+            color_continuous_scale="RdBu_r",
+            title="Spending by Group & Category"
+        )
+        st.plotly_chart(fig_tree, width="stretch")
+    else:
+        st.info("No expense data available for the current filters.")
+
+    st.markdown("---")
+
+    # 2. Spending Comparisons (MoM & YoY)
+    st.markdown("### Spending Comparisons")
+    # We need historical data for this
+    with st.spinner("Fetching historical data for comparisons..."):
+        df_all = fetch_all_transactions()
+    
+    if not df_all.empty:
+        # Determine reference date (end of selected range)
+        if isinstance(date_range, tuple) and len(date_range) == 2:
+            current_date_ref = datetime.combine(date_range[1], datetime.min.time())
+        else:
+            current_date_ref = datetime.now()
+
+        # Current MTD
+        curr_month_mask = (df_all["date"].dt.year == current_date_ref.year) & (df_all["date"].dt.month == current_date_ref.month)
+        df_curr_month = df_all[curr_month_mask & ~df_all["is_income"].eq(True)]
+        
+        # Prev Month
+        prev_month_ref = current_date_ref - relativedelta(months=1)
+        prev_month_mask = (df_all["date"].dt.year == prev_month_ref.year) & (df_all["date"].dt.month == prev_month_ref.month)
+        df_prev_month = df_all[prev_month_mask & ~df_all["is_income"].eq(True)]
+        
+        # Last Year
+        last_year_ref = current_date_ref - relativedelta(years=1)
+        last_year_mask = (df_all["date"].dt.year == last_year_ref.year) & (df_all["date"].dt.month == last_year_ref.month)
+        df_last_year = df_all[last_year_mask & ~df_all["is_income"].eq(True)]
+        
+        mom_metrics = calculate_mom_metrics(df_curr_month, df_prev_month, current_date_ref)
+        yoy_metrics = calculate_yoy_metrics(df_curr_month, df_last_year, current_date_ref)
+        
+        col_mom, col_yoy = st.columns(2)
+        with col_mom:
+            st.metric(
+                "Month-over-Month (MTD)", 
+                f"$${mom_metrics['current_mtd']:,.2f}", 
+                delta=f"{mom_metrics['pct_change']:.1f}% vs last month",
+                delta_color="inverse"
+            )
+        with col_yoy:
+            st.metric(
+                "Year-over-Year (MTD)", 
+                f"$${yoy_metrics['current_mtd']:,.2f}", 
+                delta=f"{yoy_metrics['pct_change']:.1f}% vs last year",
+                delta_color="inverse"
+            )
+            
+        # Comparison Chart
+        comp_data = pd.DataFrame([
+            {"Period": "Current MTD", "Total": mom_metrics["current_mtd"]},
+            {"Period": "Last Month MTD", "Total": mom_metrics["prev_mtd"]},
+            {"Period": "Last Year MTD", "Total": yoy_metrics["last_year_mtd"]}
+        ])
+        fig_comp = px.bar(comp_data, x="Period", y="Total", color="Period", title="MTD Comparison Across Periods")
+        st.plotly_chart(fig_comp, width="stretch")
+    
+    st.markdown("---")
+    
+    # 3. Budget Pacing
+    st.markdown("### Budget Pacing")
+    tracked_categories = st.secrets["categories"].get("budget_tracking", [])
+    if tracked_categories:
+        real_today = datetime.now()
+        pacing_date = min(real_today, current_date_ref)
+        
+        import calendar as cal_lib
+        _, last_day = cal_lib.monthrange(pacing_date.year, pacing_date.month)
+        time_elapsed_pct = pacing_date.day / last_day
+        
+        st.info(f"Reference date: **{pacing_date.strftime('%Y-%m-%d')}** ({time_elapsed_pct*100:.1f}% of month elapsed). Vertical markers show expected pacing.")
+        
+        # Get budgets for reference month
+        db_month_str = pacing_date.strftime("%Y%m")
+        monthly_budgets = fetch_month_budgets(db_month_str)
+
+        for cat in tracked_categories:
+            budgeted = monthly_budgets.get(cat, 0.0)
+            spent = df_expenses_only[df_expenses_only["Category_Name"] == cat]["amount"].sum()
+            
+            pacing = calculate_budget_pacing(spent, budgeted, pacing_date)
+            
+            st.markdown(
+                build_category_bar_html(cat, spent, budgeted, time_elapsed_pct=time_elapsed_pct),
+                unsafe_allow_html=True,
+            )
+            if pacing > 0.05: # 5% over track
+                st.warning(f"**{cat}** is pacing {pacing*100:.1f}% ahead of schedule.")
+    else:
+        st.info("No budget tracking categories defined in secrets.toml.")
+
+    st.markdown("---")
+
+    # 4. What If? Sandbox
+    st.markdown("### 🧪 What If? Sandbox")
+    with st.expander("Explore Savings Scenarios", expanded=True):
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            extra_savings = st.slider("Extra Monthly Savings ($)", 0, 5000, 500, step=100)
+            expected_return = st.slider("Expected Annual Return (%)", 0.0, 15.0, 7.0, step=0.5) / 100.0
+        with col_s2:
+            house_target = st.number_input("House Down Payment Target ($)", value=100000, step=5000)
+            retire_target = st.number_input("Retirement Goal ($)", value=1000000, step=50000)
+            
+        # Get current net worth as starting point
+        # df_nw is calculated in tab_net_worth, but we need it here.
+        # Streamlit rerun ensures it's available or we can re-calculate (cached)
+        with st.spinner("Calculating starting point..."):
+            df_all_nw = fetch_all_transactions()
+            df_nw_series = build_net_worth_series(df_all_nw)
+            current_assets = df_nw_series.iloc[-1]["net_worth"] if not df_nw_series.empty else 0.0
+        
+        months_house = calculate_milestone_months(current_assets, extra_savings, house_target, expected_return)
+        months_retire = calculate_milestone_months(current_assets, extra_savings, retire_target, expected_return)
+        
+        mc1, mc2 = st.columns(2)
+        with mc1:
+            if months_house < 9999 and months_house > 0:
+                target_date = datetime.now() + relativedelta(months=months_house)
+                st.metric("House Goal", f"{months_house} months", delta=f"Est. {target_date.strftime('%b %Y')}")
+            elif months_house == 0:
+                st.metric("House Goal", "Reached!", delta="Goal achieved")
+            else:
+                st.metric("House Goal", "Never", delta="Increase savings!")
+                
+        with mc2:
+            if months_retire < 9999 and months_retire > 0:
+                target_date = datetime.now() + relativedelta(months=months_retire)
+                st.metric("Retirement Goal", f"{months_retire} months", delta=f"Est. {target_date.strftime('%b %Y')}")
+            elif months_retire == 0:
+                st.metric("Retirement Goal", "Reached!", delta="Goal achieved")
+            else:
+                st.metric("Retirement Goal", "Never", delta="Increase savings!")
+
+        st.caption(f"Calculations start from your current net worth of $${current_assets:,.2f}")
