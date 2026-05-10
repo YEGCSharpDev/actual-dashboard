@@ -450,8 +450,12 @@ with tab_investments:
     # ── TFSA Contributions (YTD) ────────────────────────────────────────────────
     st.header("TFSA Contributions (YTD)")
 
+    current_year_val = datetime.now().year
     tfsa_cats = st.secrets["categories"]["tfsa_tracking"]
-    df_ytd_expenses = df[~df["is_income"].eq(True)]
+    
+    # Filter to current year only
+    df_ytd = df[df["date"].dt.year == current_year_val]
+    df_ytd_expenses = df_ytd[~df_ytd["is_income"].eq(True)]
     df_tfsa = df_ytd_expenses[df_ytd_expenses["Category_Name"].isin(tfsa_cats)].copy()
 
     if not df_tfsa.empty:
