@@ -18,15 +18,83 @@ from dateutil.relativedelta import relativedelta
 _cli_lock = threading.Lock()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600) # Cached for 1 hour as requested
+def fetch_all_dashboard_data() -> dict:
+    """
+    The 'One Fetch' function. Retrieves all accounts, categories, 
+    historical transactions, and budget data for the 3-month health window.
+    
+    Returns a dictionary containing all raw data for local processing.
+    """
+    data = {
+        "accounts": [],
+        "categories": [],
+        "transactions": pd.DataFrame(),
+        "budgets": {}, # month_str -> category_data
+        "error": None
+    }
+    
+    try:
+        # 1. Accounts
+        data["accounts"] = run_actual_query(["accounts", "list"])
+        
+        # 2. Categories (with goals)
+        data["categories"] = run_actual_query([
+            "query", "run", 
+            "--table", "categories",
+            "--select", "id,name,goal_def,is_income,group.name"
+        ])
+        
+        # 3. All Transactions
+        q_filter = {"is_parent": False}
+        raw_txns = run_actual_query([
+            "query", "run", 
+            "--table", "transactions",
+            "--filter", json.dumps(q_filter),
+            "--select", "date,amount,account,account.name,payee.name,category.id,category.name,category.is_income,category.group.name"
+        ])
+        
+        if raw_txns:
+            df = pd.DataFrame(raw_txns)
+            # Map column names
+            df = df.rename(columns={
+                "payee.name": "Payee_Name",
+                "category.name": "Category_Name",
+                "category.id": "category",
+                "category.is_income": "is_income",
+                "category.group.name": "Group_Name"
+            })
+            # Conversions
+            df["amount_dollars"] = df["amount"] / 100.0
+            df["amount"] = df["amount"] / -100.0 # Standard expense signage
+            df["Payee_Name"] = df["Payee_Name"].fillna("Unknown")
+            df["Category_Name"] = df["Category_Name"].fillna("Uncategorized")
+            df["Group_Name"] = df["Group_Name"].fillna("Other")
+            df["date"] = pd.to_datetime(df["date"])
+            data["transactions"] = df
+
+        # 4. Budgets (3-month window)
+        now = datetime.now()
+        target_months = [now + relativedelta(months=i) for i in range(3)]
+        for m_obj in target_months:
+            m_str = m_obj.strftime("%Y-%m")
+            data["budgets"][m_str] = run_actual_query(["budgets", "month", m_str])
+            
+    except Exception as e:
+        data["error"] = str(e)
+        st.error(f"Unified data fetch failed: {e}")
+
+    return data
+
+
 def run_actual_query(args: list) -> any:
     """
     Execute an Actual CLI command using explicit flags for connectivity.
+    No internal cache here - we rely on fetch_all_dashboard_data caching.
     """
     data_dir = os.path.join(os.getcwd(), ".actual-data")
     os.makedirs(data_dir, exist_ok=True)
     
-    # Use explicit flags instead of env vars for maximum reliability
     base_args = [
         "actual",
         "--server-url", st.secrets["ACTUAL_SERVER_URL"],
@@ -52,189 +120,16 @@ def run_actual_query(args: list) -> any:
             return json.loads(result.stdout)
         except subprocess.CalledProcessError as e:
             err_msg = e.stderr or ""
-            if "too-many-requests" in err_msg:
-                st.error("Actual server is rate-limiting requests. Please wait a minute and refresh.")
-            else:
-                st.error(f"Actual CLI error: {err_msg}")
-            raise RuntimeError(f"CLI command failed: {err_msg}")
+            raise RuntimeError(err_msg if "too-many-requests" not in err_msg else "too-many-requests")
         except json.JSONDecodeError as e:
-            st.error(f"Failed to parse CLI output: {e}")
             raise RuntimeError(f"Invalid JSON from CLI: {result.stdout}")
 
 
-# Amount conversion: Actual stores amounts as integers in cents.
-# Expenses are negative (so dividing by -100 makes them positive).
-# Income is positive in Actual (so dividing by -100 makes it negative; we re-flip later).
+# Amount conversion constants
 CENTS_DIVISOR = -100.0
 
 
-@st.cache_data(ttl=300)
-def fetch_actual_data() -> pd.DataFrame:
-    """
-    Fetch all on-budget transactions for the current year in a single batch.
-    Returns a cleaned DataFrame with amounts in dollars.
-    """
-    current_year = datetime.now().year
-    
-    # 1. Fetch metadata in one go
-    try:
-        accounts = run_actual_query(["accounts", "list"])
-    except Exception as e:
-        st.error(f"Failed to fetch metadata from Actual: {e}")
-        return pd.DataFrame()
-
-    active_onbudget_ids = {
-        acc["id"] for acc in accounts 
-        if not acc.get("offbudget") and not acc.get("closed")
-    }
-
-    # 2. Batch fetch transactions for ALL accounts for the year
-    try:
-        # Filter is_parent: false to avoid double counting split transactions
-        q_filter = {
-            "date": {"$gte": f"{current_year}-01-01"},
-            "is_parent": False
-        }
-        raw_txns = run_actual_query([
-            "query", "run", 
-            "--table", "transactions",
-            "--filter", json.dumps(q_filter),
-            "--select", "date,amount,account,account.name,payee.name,category.id,category.name,category.is_income,category.group.name"
-        ])
-    except Exception as e:
-        st.error(f"Failed to batch fetch transactions: {e}")
-        return pd.DataFrame()
-
-    if not raw_txns:
-        return pd.DataFrame()
-
-    # 3. Clean and filter locally
-    df = pd.DataFrame(raw_txns)
-    
-    # Filter to only on-budget accounts
-    df = df[df["account"].isin(active_onbudget_ids)].copy()
-    
-    if df.empty:
-        return df
-
-    # Map column names to maintain compatibility with existing app logic
-    df = df.rename(columns={
-        "payee.name": "Payee_Name",
-        "category.name": "Category_Name",
-        "category.id": "category",
-        "category.is_income": "is_income",
-        "category.group.name": "Group_Name"
-    })
-
-    # Convert from negative-integer-cents to dollars
-    df["amount"] = df["amount"] / CENTS_DIVISOR
-
-    # Final cleanup
-    df["Payee_Name"] = df["Payee_Name"].fillna("Unknown")
-    df["Category_Name"] = df["Category_Name"].fillna("Uncategorized")
-    df["Group_Name"] = df["Group_Name"].fillna("Other")
-    df["date"] = pd.to_datetime(df["date"])
-    
-    return df
-
-
-@st.cache_data(ttl=600)
-def fetch_all_transactions() -> pd.DataFrame:
-    """
-    Fetch ALL transactions from ALL accounts for the entire budget history in a single batch.
-    Used for historical Net Worth and Advanced Analytics.
-    """
-    try:
-        # Fetch only non-closed accounts
-        accounts = run_actual_query(["accounts", "list"])
-        active_ids = {acc["id"] for acc in accounts if not acc.get("closed")}
-        
-        # Batch fetch all transactions
-        q_filter = {"is_parent": False} # Get subtransactions for accuracy
-        raw_txns = run_actual_query([
-            "query", "run", 
-            "--table", "transactions",
-            "--filter", json.dumps(q_filter),
-            "--select", "date,amount,account,account.name,payee.name,category.id,category.name,category.is_income,category.group.name"
-        ])
-    except Exception as e:
-        st.error(f"Failed to batch fetch full history: {e}")
-        return pd.DataFrame()
-
-    if not raw_txns:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(raw_txns)
-    
-    # Filter to active accounts
-    df = df[df["account"].isin(active_ids)].copy()
-    
-    # Map column names
-    df = df.rename(columns={
-        "payee.name": "Payee_Name",
-        "category.name": "Category_Name",
-        "category.id": "category",
-        "category.is_income": "is_income",
-        "category.group.name": "Group_Name"
-    })
-
-    # Standardize signage (Positive = Inflow, Negative = Outflow)
-    df["amount_dollars"] = df["amount"] / 100.0
-    
-    # Compat: also provide 'amount' in positive-expense format
-    df["amount"] = df["amount"] / CENTS_DIVISOR
-    
-    # Final cleanup
-    df["Payee_Name"] = df["Payee_Name"].fillna("Unknown")
-    df["Category_Name"] = df["Category_Name"].fillna("Uncategorized")
-    df["Group_Name"] = df["Group_Name"].fillna("Other")
-    df["date"] = pd.to_datetime(df["date"])
-    
-    return df
-
-
-@st.cache_data(ttl=300)
-def fetch_investment_balances() -> dict:
-    """
-    Fetch current balances for off-budget investment accounts (RESP, RRSP, TFSA).
-    """
-    try:
-        accounts_res = run_actual_query(["accounts", "list"])
-    except Exception as e:
-        st.error(f"Failed to fetch accounts list: {e}")
-        return {"RESP": {}, "RRSP": {}, "TFSA": {}}
-
-    balances: dict[str, dict[str, float]] = {"RESP": {}, "RRSP": {}, "TFSA": {}}
-
-    resp_id = st.secrets["resp"]["identifier"].upper()
-    rrsp_id = st.secrets["rrsp"]["identifier"].upper()
-    tfsa_id = "TFSA"
-
-    for acc in accounts_res:
-        if not (acc.get("offbudget") and not acc.get("closed")):
-            continue
-
-        name = acc["name"].upper()
-        acc_type = None
-
-        if resp_id in name:
-            acc_type = "RESP"
-        elif rrsp_id in name:
-            acc_type = "RRSP"
-        elif tfsa_id in name:
-            acc_type = "TFSA"
-
-        if acc_type:
-            # Account list already contains current balances in integer cents
-            balances[acc_type][acc["name"]] = acc.get("balance", 0) / 100.0
-
-    return balances
-
-
 def _get_categories_from_budget_data(data: any) -> list:
-    """
-    Extract a flat list of category objects from various Actual CLI budget formats.
-    """
     if isinstance(data, list):
         cats = []
         for group in data:
@@ -254,106 +149,84 @@ def _get_categories_from_budget_data(data: any) -> list:
 
 
 def _parse_monthly_goal(goal_def: str | None) -> float:
-    """
-    Parse the Actual Budget JSON goal definition to find the monthly target amount.
-    Returns the target in DOLLARS.
-    """
     if not goal_def:
         return 0.0
-    
     try:
         rules = json.loads(goal_def)
         if not isinstance(rules, list):
             return 0.0
-        
-        # We take the maximum goal found in the rules (simple monthly is most common)
         max_goal = 0.0
         for rule in rules:
-            # Rule types: 'simple' (monthly), 'by' (goal by date)
             if rule.get("type") == "simple":
-                # 'monthly' field is in integer cents
                 amt = rule.get("monthly", 0)
                 max_goal = max(max_goal, amt / 100.0)
-            elif rule.get("type") == "by":
-                # 'amount' is the total goal, we'd ideally need to know how 
-                # many months are left to reach it, but for simplicity, 
-                # we'll look for monthly targets or use a heuristic.
-                # If there's a monthly target assigned to the 'by' goal:
-                amt = rule.get("amount", 0)
-                # (Simple heuristic: if no monthly is found, ignore complex math for now)
-        
         return max_goal
     except Exception:
         return 0.0
 
 
-@st.cache_data(ttl=300)
-def fetch_underbudgeted_amounts() -> tuple[dict, list, str | None]:
-    """
-    Calculate total underfunded amount by parsing goal_def metadata.
-    """
+# --- Data Extractors (Logic-only, no CLI calls) ---
+
+def get_onbudget_transactions(all_data: dict) -> pd.DataFrame:
+    df = all_data["transactions"]
+    if df.empty: return df
+    
+    onbudget_ids = {
+        acc["id"] for acc in all_data["accounts"] 
+        if not acc.get("offbudget") and not acc.get("closed")
+    }
+    return df[df["account"].isin(onbudget_ids)].copy()
+
+
+def get_investment_balances(all_data: dict) -> dict:
+    balances = {"RESP": {}, "RRSP": {}, "TFSA": {}}
+    resp_id = st.secrets["resp"]["identifier"].upper()
+    rrsp_id = st.secrets["rrsp"]["identifier"].upper()
+    
+    for acc in all_data["accounts"]:
+        if not (acc.get("offbudget") and not acc.get("closed")):
+            continue
+        name = acc["name"].upper()
+        acc_type = None
+        if resp_id in name: acc_type = "RESP"
+        elif rrsp_id in name: acc_type = "RRSP"
+        elif "TFSA" in name: acc_type = "TFSA"
+        
+        if acc_type:
+            balances[acc_type][acc["name"]] = acc.get("balance", 0) / 100.0
+    return balances
+
+
+def get_underfunded_amounts(all_data: dict) -> tuple[dict, list]:
     now = datetime.now()
     target_months = [now + relativedelta(months=i) for i in range(3)]
-    months_str = [m.strftime("%Y-%m") for m in target_months]
+    results = {}
+    
+    goal_map = {c["id"]: _parse_monthly_goal(c.get("goal_def")) for c in all_data["categories"]}
 
-    results = {m.replace("-", ""): 0.0 for m in months_str}
-    error_msg = None
-
-    try:
-        # 1. Fetch category metadata (goals) using ActualQL
-        cat_metadata = run_actual_query([
-            "query", "run", 
-            "--table", "categories",
-            "--select", "id,name,goal_def"
-        ])
-        # Map ID to Parsed Goal
-        goal_map = {c["id"]: _parse_monthly_goal(c.get("goal_def")) for c in cat_metadata}
-
-        for m in months_str:
-            # 2. Fetch assignments for the month
-            data = run_actual_query(["budgets", "month", m])
-            categories = _get_categories_from_budget_data(data)
-            
-            underfunded_total = 0.0
-            for cat in categories:
-                cat_id = cat.get("id")
-                target = goal_map.get(cat_id, 0.0)
-                budgeted = cat.get("budgeted", 0) / 100.0
-                
-                # Check for underfunding
-                if budgeted < target:
-                    underfunded_total += (target - budgeted)
-                
-                # ALSO: Check for carried over overspending (Negative Balance)
-                # In Actual, a negative balance in a future month is also underfunded
-                balance = cat.get("balance", 0) / 100.0
-                if balance < 0 and budgeted >= target:
-                    # If already budgeted to target but balance still negative 
-                    # due to rollover, the remaining negative is underfunded.
-                    underfunded_total += abs(balance)
-            
-            results[m.replace("-", "")] = underfunded_total
-    except Exception as e:
-        error_msg = f"Failed to fetch underbudgeted amounts: {e}"
-
-    return results, target_months, error_msg
+    for m_obj in target_months:
+        m_str = m_obj.strftime("%Y-%m")
+        budget_data = all_data["budgets"].get(m_str, [])
+        categories = _get_categories_from_budget_data(budget_data)
+        
+        total = 0.0
+        for cat in categories:
+            target = goal_map.get(cat.get("id"), 0.0)
+            budgeted = cat.get("budgeted", 0) / 100.0
+            if budgeted < target:
+                total += (target - budgeted)
+            balance = cat.get("balance", 0) / 100.0
+            if balance < 0 and budgeted >= target:
+                total += abs(balance)
+        results[m_str.replace("-", "")] = total
+        
+    return results, target_months
 
 
-@st.cache_data(ttl=300)
-def fetch_month_budgets(month_str: str) -> dict:
-    """
-    Fetch the assigned (budgeted) amounts for all categories for a specific month.
-    """
+def get_month_budgets(all_data: dict, month_str: str) -> dict:
     if len(month_str) == 6 and month_str.isdigit():
         month_str = f"{month_str[:4]}-{month_str[4:]}"
-
-    budgets: dict[str, float] = {}
-    try:
-        data = run_actual_query(["budgets", "month", month_str])
-        categories = _get_categories_from_budget_data(data)
-        for cat in categories:
-            budgets[cat["name"]] = cat.get("budgeted", 0) / 100.0
-    except Exception as e:
-        st.warning(f"Failed to fetch category budgets: {e}")
-
-    return budgets
+    
+    budget_data = all_data["budgets"].get(month_str, [])
+    categories = _get_categories_from_budget_data(budget_data)
+    return {cat["name"]: cat.get("budgeted", 0) / 100.0 for cat in categories}

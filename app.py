@@ -14,11 +14,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from data import (
-    fetch_actual_data,
-    fetch_all_transactions,
-    fetch_investment_balances,
-    fetch_month_budgets,
-    fetch_underbudgeted_amounts,
+    fetch_all_dashboard_data,
+    get_investment_balances,
+    get_month_budgets,
+    get_onbudget_transactions,
+    get_underfunded_amounts,
 )
 from transforms import (
     COLOR_GREEN,
@@ -148,11 +148,18 @@ def render_forecast_section(
 # --- Main Dashboard ---
 st.title("Actual Budget Dashboard")
 
-with st.spinner("Fetching data from Actual API..."):
-    df = fetch_actual_data()
+with st.spinner("Fetching unified budget data..."):
+    all_data = fetch_all_dashboard_data()
+
+if all_data.get("error"):
+    st.error(f"Failed to load data: {all_data['error']}")
+    st.stop()
+
+# Extract on-budget transactions for filtering
+df = get_onbudget_transactions(all_data)
 
 if df.empty:
-    st.warning("No transaction data returned from the API.")
+    st.warning("No transaction data available.")
     st.stop()
 
 # --- Sidebar Filters ---
@@ -171,6 +178,12 @@ date_range = st.sidebar.date_input(
     min_value=min_date,
     max_value=max_date,
 )
+
+# Standardize reference date for metrics and pacing early to avoid NameErrors
+if isinstance(date_range, tuple) and len(date_range) == 2:
+    current_date_ref = datetime.combine(date_range[1], datetime.min.time())
+else:
+    current_date_ref = datetime.now()
 
 # Category Filter
 all_categories = sorted(df["Category_Name"].unique())
@@ -274,13 +287,10 @@ with tab_overview:
 
     # ── Envelope Health Checks ───────────────────────────────────────────────────
     st.subheader("Future Envelope Health")
-    underbudget_data, target_months, underbudget_error = fetch_underbudgeted_amounts()
-    if underbudget_error:
-        st.warning(underbudget_error)
+    underbudget_data, target_months = get_underfunded_amounts(all_data)
 
     m_cols = st.columns(3)
     for i, m_obj in enumerate(target_months):
-        # CLI expects YYYY-MM, but here we might still use the label or internal str
         m_str = m_obj.strftime("%Y%m")
         m_label = m_obj.strftime("%b %Y")
         val = underbudget_data.get(m_str, 0.0)
@@ -308,10 +318,9 @@ with tab_overview:
     tracked_categories = st.secrets["categories"].get("budget_tracking", [])
 
     if tracked_categories:
-        # Note: We need a month string for this. If multiple months are selected, 
-        # we'll use the latest month in the range for budget tracking.
-        db_month_str = df_filtered["date"].max().strftime("%Y%m")
-        monthly_budgets = fetch_month_budgets(db_month_str)
+        # If multiple months are selected, use the latest month in the range for budget tracking.
+        db_month_str = df_filtered["date"].max().strftime("%Y-%m")
+        monthly_budgets = get_month_budgets(all_data, db_month_str)
 
         for cat in tracked_categories:
             budgeted = monthly_budgets.get(cat, 0.0)
@@ -390,9 +399,8 @@ with tab_overview:
 
 with tab_net_worth:
     st.subheader("Historical Net Worth")
-    with st.spinner("Calculating Net Worth history..."):
-        df_all = fetch_all_transactions()
-        df_nw = build_net_worth_series(df_all)
+    # All transactions already fetched in all_data
+    df_nw = build_net_worth_series(all_data["transactions"])
 
     if not df_nw.empty:
         # Display current net worth
@@ -504,7 +512,7 @@ with tab_investments:
     st.markdown("---")
     st.header("Investment Forecasts")
 
-    balances = fetch_investment_balances()
+    balances = get_investment_balances(all_data)
     current_year = datetime.now().year
 
     tab_resp, tab_rrsp, tab_tfsa = st.tabs(["RESP", "RRSP", "TFSA"])
@@ -635,17 +643,10 @@ with tab_advanced:
 
     # 2. Spending Comparisons (MoM & YoY)
     st.markdown("### Spending Comparisons")
-    # We need historical data for this
-    with st.spinner("Fetching historical data for comparisons..."):
-        df_all = fetch_all_transactions()
+    # Using pre-fetched all_data["transactions"]
+    df_all = all_data["transactions"]
     
     if not df_all.empty:
-        # Determine reference date (end of selected range)
-        if isinstance(date_range, tuple) and len(date_range) == 2:
-            current_date_ref = datetime.combine(date_range[1], datetime.min.time())
-        else:
-            current_date_ref = datetime.now()
-
         # Current MTD
         curr_month_mask = (df_all["date"].dt.year == current_date_ref.year) & (df_all["date"].dt.month == current_date_ref.month)
         df_curr_month = df_all[curr_month_mask & ~df_all["is_income"].eq(True)]
@@ -704,8 +705,8 @@ with tab_advanced:
         st.info(f"Reference date: **{pacing_date.strftime('%Y-%m-%d')}** ({time_elapsed_pct*100:.1f}% of month elapsed). Vertical markers show expected pacing.")
         
         # Get budgets for reference month
-        db_month_str = pacing_date.strftime("%Y%m")
-        monthly_budgets = fetch_month_budgets(db_month_str)
+        db_month_str = pacing_date.strftime("%Y-%m")
+        monthly_budgets = get_month_budgets(all_data, db_month_str)
 
         for cat in tracked_categories:
             budgeted = monthly_budgets.get(cat, 0.0)
@@ -736,12 +737,9 @@ with tab_advanced:
             retire_target = st.number_input("Retirement Goal ($)", value=1000000, step=50000)
             
         # Get current net worth as starting point
-        # df_nw is calculated in tab_net_worth, but we need it here.
-        # Streamlit rerun ensures it's available or we can re-calculate (cached)
-        with st.spinner("Calculating starting point..."):
-            df_all_nw = fetch_all_transactions()
-            df_nw_series = build_net_worth_series(df_all_nw)
-            current_assets = df_nw_series.iloc[-1]["net_worth"] if not df_nw_series.empty else 0.0
+        # Directly use transactions from all_data
+        df_nw_series = build_net_worth_series(df_all)
+        current_assets = df_nw_series.iloc[-1]["net_worth"] if not df_nw_series.empty else 0.0
         
         months_house = calculate_milestone_months(current_assets, extra_savings, house_target, expected_return)
         months_retire = calculate_milestone_months(current_assets, extra_savings, retire_target, expected_return)
