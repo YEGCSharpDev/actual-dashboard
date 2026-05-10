@@ -414,7 +414,8 @@ with tab_net_worth:
         st.metric(
             "Current Net Worth", 
             f"${current_nw:,.2f}", 
-            delta=f"${nw_delta:,.2f} this month"
+            delta=f"${nw_delta:,.2f} this month",
+            delta_color="normal"
         )
 
         # Net Worth Line Chart
