@@ -160,8 +160,8 @@ st.sidebar.header("Global Filters")
 
 # Date Range Filter
 min_date = df["date"].min().date()
-max_date = df["date"].max().date()
 today = datetime.now().date()
+max_date = max(df["date"].max().date(), today)
 
 # Default to current month
 start_of_month = today.replace(day=1)
