@@ -156,30 +156,43 @@ def _parse_monthly_goal(goal_def: str | None) -> float:
         return 0.0
 
 
-def get_underfunded_amounts(all_data: dict) -> tuple[dict, list]:
+def fetch_underbudgeted_amounts(all_data: dict) -> tuple[dict, list, str | None]:
+    """
+    For the current and next two months, calculate the total underfunded
+    amount across all budget categories.
+
+    Returns (results_dict, target_month_objects, error_message_or_None).
+    """
     now = datetime.now()
     target_months = [now + relativedelta(months=i) for i in range(3)]
-    results = {}
-    
+    months_str = [m.strftime("%Y%m") for m in target_months]
+
+    results = {m: 0.0 for m in months_str}
+    error_msg = all_data.get("error")
+
+    if error_msg:
+        return results, target_months, error_msg
+
     goal_map = {c["id"]: _parse_monthly_goal(c.get("goal_def")) for c in all_data.get("categories", [])}
 
     for m_obj in target_months:
-        m_str = m_obj.strftime("%Y-%m")
-        budget_data = all_data.get("budgets", {}).get(m_str, [])
+        m_str_api = m_obj.strftime("%Y-%m")
+        m_str_key = m_obj.strftime("%Y%m")
+        budget_data = all_data.get("budgets", {}).get(m_str_api, [])
         categories = _get_categories_from_budget_data(budget_data)
         
-        total = 0.0
+        underfunded_total = 0.0
         for cat in categories:
             target = goal_map.get(cat.get("id"), 0.0)
             budgeted = cat.get("budgeted", 0) / 100.0
+            
+            # Match the legacy SQL: SUM(goal - amount) where amount < goal
             if budgeted < target:
-                total += (target - budgeted)
-            balance = cat.get("balance", 0) / 100.0
-            if balance < 0 and budgeted >= target:
-                total += abs(balance)
-        results[m_str.replace("-", "")] = total
+                underfunded_total += (target - budgeted)
         
-    return results, target_months
+        results[m_str_key] = underfunded_total
+        
+    return results, target_months, None
 
 
 def get_month_budgets(all_data: dict, month_str: str) -> dict:

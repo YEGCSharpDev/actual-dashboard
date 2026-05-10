@@ -16,10 +16,10 @@ import streamlit as st
 
 from data import (
     fetch_all_dashboard_data,
+    fetch_underbudgeted_amounts,
     get_investment_balances,
     get_month_budgets,
     get_onbudget_transactions,
-    get_underfunded_amounts,
 )
 from transforms import (
     COLOR_GREEN,
@@ -288,7 +288,9 @@ with tab_overview:
 
     # ── Envelope Health Checks ───────────────────────────────────────────────────
     st.subheader("Future Envelope Health")
-    underbudget_data, target_months = get_underfunded_amounts(all_data)
+    underbudget_data, target_months, underbudget_error = fetch_underbudgeted_amounts(all_data)
+    if underbudget_error:
+        st.warning(underbudget_error)
 
     m_cols = st.columns(3)
     for i, m_obj in enumerate(target_months):
