@@ -124,6 +124,8 @@ def calculate_mtd_normalized_total(df: pd.DataFrame, day_cutoff: int) -> float:
     """
     if df.empty:
         return 0.0
+    # Create an explicit copy to avoid SettingWithCopyWarning when updating 'date'
+    df = df.copy()
     # Ensure date column is datetime
     df["date"] = pd.to_datetime(df["date"])
     mask = df["date"].dt.day <= day_cutoff
