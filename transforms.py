@@ -80,6 +80,42 @@ def split_income_expenses(
     return df_income, df_expenses
 
 
+def build_net_worth_series(df_all: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate historical net worth by performing a cumulative sum of all
+    transactions across all accounts.
+
+    Args:
+        df_all: DataFrame containing all transactions from all accounts.
+                Expects 'amount_dollars' where Positive = Inflow.
+
+    Returns:
+        DataFrame with ['date', 'amount', 'net_worth'] grouped by month.
+    """
+    if df_all.empty:
+        return pd.DataFrame()
+
+    # Sort by date for cumulative sum
+    df_sorted = df_all.sort_values("date")
+
+    # Group by month and sum the inflows/outflows
+    # Use 'ME' (Month End) or 'M' for resampling
+    monthly = (
+        df_sorted.set_index("date")
+        .resample("ME")["amount_dollars"]
+        .sum()
+        .reset_index()
+    )
+
+    # Calculate cumulative net worth
+    monthly["net_worth"] = monthly["amount_dollars"].cumsum()
+
+    # Rename columns for clarity
+    monthly = monthly.rename(columns={"amount_dollars": "monthly_change"})
+
+    return monthly
+
+
 # --- HTML Rendering Helpers ---
 def _esc(text: str) -> str:
     """Escape a string for safe HTML embedding."""
