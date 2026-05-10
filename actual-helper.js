@@ -74,20 +74,30 @@ async function main() {
                 ])
         ).then(res => res.data);
 
-        // Fetch Budgets (3-month window)
+        // 4. Fetch Budgets for the entire transaction range (Correctness Fix: P1-2)
+        // This ensures historical month filtering in the UI shows correct budget limits.
+        const budgetMonths = new Set();
+        results.transactions.forEach(t => {
+            if (t.date) budgetMonths.add(t.date.substring(0, 7));
+        });
+        
+        // Also add the next two months for the "Future Envelope Health" view
         const now = new Date();
         for (let i = 0; i < 3; i++) {
             const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
-            const monthStr = date.toISOString().substring(0, 7); // YYYY-MM
-            results.budgets[monthStr] = await api.getBudgetMonth(monthStr);
+            budgetMonths.add(date.toISOString().substring(0, 7));
         }
 
-        // 4. Output Results with markers to separate from library logs
+        for (const month of budgetMonths) {
+            results.budgets[month] = await api.getBudgetMonth(month);
+        }
+
+        // 5. Output Results with markers to separate from library logs
         process.stdout.write("\n__ACTUAL_JSON_START__\n");
         process.stdout.write(JSON.stringify(results));
         process.stdout.write("\n__ACTUAL_JSON_END__\n");
 
-        // 5. Cleanup
+        // 6. Cleanup
         await api.shutdown();
         process.exit(0);
 

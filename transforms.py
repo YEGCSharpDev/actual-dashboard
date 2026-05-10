@@ -82,17 +82,19 @@ def split_income_expenses(
     return df_income, df_expenses
 
 
-def build_net_worth_series(df_all: pd.DataFrame) -> pd.DataFrame:
+def build_net_worth_series(df_all: pd.DataFrame, current_balance: float) -> pd.DataFrame:
     """
     Calculate historical net worth by performing a cumulative sum of all
-    transactions across all accounts.
+    transactions (including off-budget) across all accounts, anchored to the
+    known current total balance. (Correctness Fix: P1-3)
 
     Args:
         df_all: DataFrame containing all transactions from all accounts.
                 Expects 'amount_dollars' where Positive = Inflow.
+        current_balance: The current total balance of all active accounts in dollars.
 
     Returns:
-        DataFrame with ['date', 'amount', 'net_worth'] grouped by month.
+        DataFrame with ['date', 'monthly_change', 'net_worth'] grouped by month.
     """
     if df_all.empty:
         return pd.DataFrame()
@@ -109,8 +111,15 @@ def build_net_worth_series(df_all: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
 
-    # Calculate cumulative net worth
-    monthly["net_worth"] = monthly["amount_dollars"].cumsum()
+    # To anchor the history, we calculate the cumulative sum of deltas backward
+    # from the current known balance.
+    # Logic: current_balance = history_start + sum(deltas)
+    # So: history_start = current_balance - sum(deltas)
+    # Then: history[i] = history_start + sum(deltas[:i])
+    total_delta = monthly["amount_dollars"].sum()
+    history_start = current_balance - total_delta
+    
+    monthly["net_worth"] = history_start + monthly["amount_dollars"].cumsum()
 
     # Rename columns for clarity
     monthly = monthly.rename(columns={"amount_dollars": "monthly_change"})
