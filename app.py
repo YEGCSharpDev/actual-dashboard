@@ -410,12 +410,12 @@ with tab_overview:
 with tab_net_worth:
     st.subheader("Historical Net Worth")
     # All transactions already fetched in all_data
-    # Correctness Fix P1-3: Anchor on current known balances
-    current_assets = round(sum(acc.get("balance", 0) for acc in all_data.get("accounts", []) if not acc.get("closed")) / 100.0, 2)
+    # Correctness Fix P1-3: Anchor on current known balances (using balance_current from API)
+    current_assets = round(sum((acc.get("balance_current") or 0) for acc in all_data.get("accounts", []) if not acc.get("closed")) / 100.0, 2)
     df_nw = build_net_worth_series(all_data["transactions"], current_assets)
 
-
     if not df_nw.empty:
+
         # Display current net worth
         current_nw = df_nw.iloc[-1]["net_worth"]
         prev_nw = df_nw.iloc[-2]["net_worth"] if len(df_nw) > 1 else current_nw
@@ -763,8 +763,8 @@ with tab_advanced:
             retire_target = st.number_input("Retirement Goal ($)", value=1000000, step=50000)
             
         # Get current net worth as starting point
-        # Use anchored balance from accounts table for accuracy
-        current_assets = round(sum(acc.get("balance", 0) for acc in all_data.get("accounts", []) if not acc.get("closed")) / 100.0, 2)
+        # Use anchored balance from accounts table for accuracy (using balance_current from API)
+        current_assets = round(sum((acc.get("balance_current") or 0) for acc in all_data.get("accounts", []) if not acc.get("closed")) / 100.0, 2)
         
         months_house = calculate_milestone_months(current_assets, extra_savings, house_target, expected_return)
         months_retire = calculate_milestone_months(current_assets, extra_savings, retire_target, expected_return)

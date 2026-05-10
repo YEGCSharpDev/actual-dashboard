@@ -169,7 +169,12 @@ def get_investment_balances(all_data: dict) -> dict:
         elif "TFSA" in name: acc_type = "TFSA"
         
         if acc_type:
-            balances[acc_type][acc["name"]] = acc.get("balance", 0) / 100.0
+            # The API returns 'balance_current' instead of 'balance'
+            # Fallback to 0 if balance is None/null
+            raw_balance = acc.get("balance_current")
+            if raw_balance is None:
+                raw_balance = 0
+            balances[acc_type][acc["name"]] = raw_balance / 100.0
     return balances
 
 
