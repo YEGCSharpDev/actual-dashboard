@@ -8,40 +8,25 @@ const path = require('path');
 const fs = require('fs');
 
 async function main() {
-    // 1. Argument Parsing
-    const args = process.argv.slice(2);
-    const options = {};
-    for (let i = 0; i < args.length; i++) {
-        if (args[i].startsWith('--')) {
-            const key = args[i].substring(2);
-            const value = args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : true;
-            options[key] = value;
-        }
-    }
+    // 1. Configuration from Environment Variables (Security Fix: P0-2)
+    const serverUrl = process.env.ACTUAL_SERVER_URL;
+    const password = process.env.ACTUAL_PASSWORD;
+    const syncId = process.env.ACTUAL_SYNC_ID;
+    const encryptionPassword = process.env.ACTUAL_ENCRYPTION_PASSWORD;
+    const dataDir = process.env.ACTUAL_DATA_DIR || path.join(process.cwd(), '.actual-data');
 
-    if (options.help) {
-        console.log("Usage: node actual-helper.js --server-url <url> --password <pass> --sync-id <id> [--encryption-password <pass>] [--data-dir <path>]");
-        process.exit(0);
-    }
-
-    if (options['test-connection']) {
+    // Simple test mode for CI/Nix checks
+    if (process.argv.includes('--test-connection')) {
         console.log("actual-helper: test-connection mode");
         process.exit(0);
     }
 
-    // 2. Configuration
-    const serverUrl = options['server-url'];
-    const password = options.password;
-    const syncId = options['sync-id'];
-    const encryptionPassword = options['encryption-password'];
-    const dataDir = options['data-dir'] || path.join(process.cwd(), '.actual-data');
-
     if (!serverUrl || !password || !syncId) {
-        console.error("Error: --server-url, --password, and --sync-id are required.");
+        console.error("Error: ACTUAL_SERVER_URL, ACTUAL_PASSWORD, and ACTUAL_SYNC_ID environment variables are required.");
         process.exit(1);
     }
 
-    // 3. API Initialization
+    // 2. API Initialization
     try {
         if (!fs.existsSync(dataDir)) {
             fs.mkdirSync(dataDir, { recursive: true });
@@ -56,7 +41,7 @@ async function main() {
         await api.downloadBudget(syncId, { password: encryptionPassword });
         await api.sync();
 
-        // 4. Data Retrieval
+        // 3. Data Retrieval
         const results = {
             accounts: [],
             categories: [],
@@ -97,12 +82,12 @@ async function main() {
             results.budgets[monthStr] = await api.getBudgetMonth(monthStr);
         }
 
-        // 5. Output Results with markers to separate from library logs
+        // 4. Output Results with markers to separate from library logs
         process.stdout.write("\n__ACTUAL_JSON_START__\n");
         process.stdout.write(JSON.stringify(results));
         process.stdout.write("\n__ACTUAL_JSON_END__\n");
 
-        // 6. Cleanup
+        // 5. Cleanup
         await api.shutdown();
         process.exit(0);
 

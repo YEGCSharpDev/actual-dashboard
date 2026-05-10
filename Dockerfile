@@ -15,8 +15,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code
-COPY app.py data.py transforms.py .
+# Copy the application and sidecar code
+COPY app.py data.py transforms.py actual-helper.js package.json .
+
+# Install sidecar dependencies
+RUN npm install
 
 # Expose the default Streamlit port
 EXPOSE 8501

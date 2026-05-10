@@ -680,14 +680,14 @@ with tab_advanced:
         with col_mom:
             st.metric(
                 "Month-over-Month (MTD)", 
-                f"$${mom_metrics['current_mtd']:,.2f}", 
+                f"${mom_metrics['current_mtd']:,.2f}", 
                 delta=f"{mom_metrics['pct_change']:.1f}% vs last month",
                 delta_color="inverse"
             )
         with col_yoy:
             st.metric(
                 "Year-over-Year (MTD)", 
-                f"$${yoy_metrics['current_mtd']:,.2f}", 
+                f"${yoy_metrics['current_mtd']:,.2f}", 
                 delta=f"{yoy_metrics['pct_change']:.1f}% vs last year",
                 delta_color="inverse"
             )
@@ -775,4 +775,4 @@ with tab_advanced:
             else:
                 st.metric("Retirement Goal", "Never", delta="Increase savings!")
 
-        st.caption(f"Calculations start from your current net worth of $${current_assets:,.2f}")
+        st.caption(f"Calculations start from your current net worth of ${current_assets:,.2f}")

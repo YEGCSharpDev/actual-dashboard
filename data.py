@@ -27,21 +27,25 @@ def fetch_all_dashboard_data() -> dict:
     data_dir = os.path.join(os.getcwd(), ".actual-data")
     os.makedirs(data_dir, exist_ok=True)
     
-    args = [
-        "node", "actual-helper.js",
-        "--server-url", st.secrets["ACTUAL_SERVER_URL"],
-        "--password", st.secrets["ACTUAL_PASSWORD"],
-        "--sync-id", st.secrets["ACTUAL_SYNC_ID"],
-        "--data-dir", data_dir
-    ]
+    # Use official Actual CLI environment variable names for the sidecar
+    env = {
+        **os.environ,
+        "ACTUAL_SERVER_URL": st.secrets["ACTUAL_SERVER_URL"],
+        "ACTUAL_PASSWORD": st.secrets["ACTUAL_PASSWORD"],
+        "ACTUAL_SYNC_ID": st.secrets["ACTUAL_SYNC_ID"],
+        "ACTUAL_DATA_DIR": data_dir,
+    }
     
     if "ACTUAL_ENCRYPTION_PASSWORD" in st.secrets:
-        args.extend(["--encryption-password", st.secrets["ACTUAL_ENCRYPTION_PASSWORD"]])
+        env["ACTUAL_ENCRYPTION_PASSWORD"] = st.secrets["ACTUAL_ENCRYPTION_PASSWORD"]
+
+    args = ["node", "actual-helper.js"]
 
     with _cli_lock:
         try:
             result = subprocess.run(
                 args,
+                env=env,
                 capture_output=True,
                 text=True,
                 check=True
