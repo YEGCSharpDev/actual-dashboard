@@ -1,3 +1,9 @@
 .streamlit/secrets.toml
 venv/
 *.pyc
+.planning/
+.temp-cli/
+.npm-global/
+.npm-cache/
+.actual-data/
+.gsd/
