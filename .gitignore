@@ -7,3 +7,7 @@ venv/
 .npm-cache/
 .actual-data/
 .gsd/
+node_modules/
+package-lock.json
+output.json
+test_actual_cli*.py
