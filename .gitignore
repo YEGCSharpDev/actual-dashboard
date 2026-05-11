@@ -1,3 +1,12 @@
 .streamlit/secrets.toml
 venv/
 *.pyc
+.planning/
+.temp-cli/
+.npm-global/
+.npm-cache/
+.actual-data/
+.gsd/
+node_modules/
+output.json
+test_actual_cli*.py

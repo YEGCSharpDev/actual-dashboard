@@ -1,204 +1,250 @@
 """
 Data layer for Actual Budget Dashboard.
 
-Handles all API communication, SQLite export caching, and raw data retrieval.
+Handles all API communication via Node.js Sidecar (Actual API) and raw data retrieval.
 """
-
-import io
+import json
 import os
 import sqlite3
-import tempfile
-import zipfile
+import subprocess
+import threading
 from datetime import datetime
+from typing import Any, Dict, List, Optional, TypedDict
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 import pandas as pd
-import requests
 import streamlit as st
 from dateutil.relativedelta import relativedelta
 
 
-# --- Configuration ---
-API_URL = st.secrets["ACTUAL_URL"]
-HEADERS = {"x-api-key": st.secrets["ACTUAL_API_KEY"]}
-API_TIMEOUT = 15
-
-# Amount conversion: Actual stores amounts as negative integer cents.
-# Expenses are negative (so dividing by -100 makes them positive).
-# Income is positive in Actual (so dividing by -100 makes it negative; we re-flip later).
-CENTS_DIVISOR = -100.0
+class DashboardData(TypedDict):
+    """Explicit type for the unified dashboard data blob. (P2-J)"""
+    accounts: List[Dict[str, Any]]
+    transactions: pd.DataFrame
+    budgets: Dict[str, Any]
+    error: Optional[str]
 
 
-def _api_get(path: str) -> dict:
-    """Make an authenticated GET request to the Actual API."""
-    resp = requests.get(f"{API_URL}/{path}", headers=HEADERS, timeout=API_TIMEOUT)
-    resp.raise_for_status()
-    return resp.json()
+# --- Concurrency & Path Control ---
+_cli_lock = threading.Lock()
+_cached_db_path = None # P2-3: Cache the resolved db.sqlite path
 
 
-@st.cache_data(ttl=300)
-def _fetch_export_db_bytes() -> bytes:
+def normalize_transactions(raw_txns: list) -> pd.DataFrame:
     """
-    Download the Actual budget export ZIP and extract the SQLite database bytes.
-
-    Cached so that multiple functions needing the export DB share a single download.
+    Standardize raw transactions from the API into a consistent DataFrame. (P2-10)
+    
+    Sign Invariant: (P2-11)
+    - 'amount_dollars': Inflow = Positive, Outflow = Negative.
+    - 'amount': Inflow = Negative, Outflow = Positive (Cost to User convention).
     """
-    resp = requests.get(f"{API_URL}/export", headers=HEADERS, timeout=API_TIMEOUT)
-    resp.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-        return z.read("db.sqlite")
+    if not raw_txns:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(raw_txns)
+    
+    # Map column names for compatibility
+    df = df.rename(columns={
+        "payee.name": "Payee_Name",
+        "category.name": "Category_Name",
+        "category.id": "category",
+        "category.is_income": "is_income",
+        "category.group.name": "Group_Name"
+    })
+
+    # Amount conversion constants
+    CENTS_DIVISOR = -100.0
+    
+    # Conversions
+    df["amount_dollars"] = df["amount"] / 100.0
+    df["amount"] = df["amount"] / CENTS_DIVISOR # Standard expense signage
+    
+    # Final cleanup
+    df["Payee_Name"] = df["Payee_Name"].fillna("Unknown")
+    df["Category_Name"] = df["Category_Name"].fillna("Uncategorized")
+    df["Group_Name"] = df["Group_Name"].fillna("Other")
+    df["date"] = pd.to_datetime(df["date"])
+    
+    return df
 
 
-def query_export_db(query: str, params: tuple = ()) -> list:
+@st.cache_data(ttl=3600) # Cached for 1 hour
+def fetch_all_dashboard_data() -> dict:
     """
-    Run a read-only SQL query against the cached Actual export database.
-
-    Returns a list of tuples (rows).
+    Invokes the Node.js sidecar to fetch all budget data in a single session.
     """
-    db_bytes = _fetch_export_db_bytes()
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = os.path.join(tmp_dir, "db.sqlite")
-        with open(tmp_path, "wb") as f:
-            f.write(db_bytes)
+    global _cached_db_path
+    _cached_db_path = None # Invalidate path cache on fresh fetch
+    
+    data_dir = os.path.join(os.getcwd(), ".actual-data")
+    os.makedirs(data_dir, exist_ok=True)
+    
+    # P2-O: File-based locking to prevent multi-process races on .actual-data
+    lock_path = os.path.join(data_dir, ".lock")
+    
+    # Pass configuration and secrets via env vars (P0-2, P0-A)
+    env = os.environ.copy()
+    env["ACTUAL_SERVER_URL"] = st.secrets["ACTUAL_SERVER_URL"]
+    env["ACTUAL_PASSWORD"] = st.secrets["ACTUAL_PASSWORD"]
+    env["ACTUAL_SYNC_ID"] = st.secrets["ACTUAL_SYNC_ID"]
+    env["ACTUAL_DATA_DIR"] = data_dir
+    
+    if "ACTUAL_ENCRYPTION_PASSWORD" in st.secrets:
+        env["ACTUAL_ENCRYPTION_PASSWORD"] = st.secrets["ACTUAL_ENCRYPTION_PASSWORD"]
 
-        conn = sqlite3.connect(tmp_path)
+    # Sidecar invoked with no secrets in argv
+    args = ["node", "actual-helper.js"]
+
+    with _cli_lock:
+        if fcntl:
+            with open(lock_path, "w") as lock_file:
+                try:
+                    # Exclusive non-blocking lock
+                    fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return {"error": "Another process is currently syncing. Please wait.", 
+                            "accounts": [], "transactions": pd.DataFrame(), "budgets": {}
+}
+
+                return _invoke_sidecar(args, env)
+        else:
+            # Fallback for non-Unix (P1-B)
+            st.warning("File locking not supported on this platform. Concurrent syncs may be unsafe.")
+            return _invoke_sidecar(args, env)
+
+
+def _invoke_sidecar(args, env) -> DashboardData:
+    """Internal helper to execute the Node.js sidecar."""
+    try:
+        # Use Popen + communicate for safe large payload handling (P2-D)
+        process = subprocess.Popen(
+            args,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
         try:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return cursor.fetchall()
-        finally:
-            conn.close()
+            stdout, stderr = process.communicate(timeout=300)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            return {"error": "Sidecar timed out — check server connectivity", 
+                    "accounts": [], "transactions": pd.DataFrame(), "budgets": {}
+}
+
+        if process.returncode != 0:
+            return {"error": f"Sidecar failed: {stderr}", 
+                    "accounts": [], "transactions": pd.DataFrame(), "budgets": {}
+}
+        
+        # Extract JSON between markers
+        output = stdout
+        start_marker = "__ACTUAL_JSON_START__"
+        end_marker = "__ACTUAL_JSON_END__"
+        
+        if start_marker not in output or end_marker not in output:
+            raise RuntimeError(f"Malformed output from sidecar: {output}")
+        
+        raw_json = output.split(start_marker)[1].split(end_marker)[0].strip()
+        res = json.loads(raw_json)
+        
+        # Post-process transactions into DataFrame (P2-10)
+        res["transactions"] = normalize_transactions(res.get("transactions", []))
+        res["error"] = None
+        return res
+    except Exception as e:
+        return {"error": str(e), 
+                "accounts": [], "transactions": pd.DataFrame(), "budgets": {}
+}
 
 
-@st.cache_data(ttl=300)
-def fetch_actual_data() -> pd.DataFrame:
+# --- SQLite Helpers ---
+
+def query_local_db(query: str, params: tuple = ()) -> list:
     """
-    Fetch all on-budget transactions for the current year, merged with
-    category and payee names.
-
-    Returns a cleaned DataFrame with amounts in dollars (positive = expense,
-    negative = income before re-flip).
+    Run a read-only SQL query against the locally synchronized Actual database.
     """
-    cats_res = _api_get("categories")["data"]
-    payees_res = _api_get("payees")["data"]
-    accounts_res = _api_get("accounts")["data"]
+    global _cached_db_path
+    
+    if not _cached_db_path:
+        data_dir = os.path.join(os.getcwd(), ".actual-data")
+        for root, dirs, files in os.walk(data_dir):
+            if "db.sqlite" in files:
+                _cached_db_path = os.path.join(root, "db.sqlite")
+                break
+            
+    if not _cached_db_path:
+        raise FileNotFoundError("Local Actual database (db.sqlite) not found. Run sync first.")
 
-    active_accounts = [
-        acc["id"]
-        for acc in accounts_res
+    conn = sqlite3.connect(f"file:{_cached_db_path}?mode=ro", uri=True)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+# --- Data Extractors ---
+
+def get_onbudget_transactions(all_data: dict) -> pd.DataFrame:
+    df = all_data.get("transactions", pd.DataFrame())
+    if df.empty: return df
+    
+    onbudget_ids = {
+        acc["id"] for acc in all_data.get("accounts", []) 
         if not acc.get("offbudget") and not acc.get("closed")
-    ]
-
-    current_year = datetime.now().year
-    raw_txns = []
-
-    for acc_id in active_accounts:
-        try:
-            data = _api_get(
-                f"accounts/{acc_id}/transactions?since_date={current_year}-01-01"
-            )
-        except requests.RequestException as exc:
-            st.warning(f"Failed to fetch transactions for account {acc_id}: {exc}")
-            continue
-
-        txns = data.get("data", [])
-        for txn in txns:
-            if txn.get("subtransactions"):
-                for sub in txn["subtransactions"]:
-                    sub["date"] = txn["date"]
-                    sub["payee"] = sub.get("payee") or txn.get("payee")
-                    raw_txns.append(sub)
-            else:
-                raw_txns.append(txn)
-
-    df_txns = pd.DataFrame(raw_txns)
-    if df_txns.empty:
-        return df_txns
-
-    df_cats = pd.DataFrame(cats_res)[["id", "name", "is_income"]].rename(
-        columns={"id": "category", "name": "Category_Name"}
-    )
-    df_payees = pd.DataFrame(payees_res)[["id", "name"]].rename(
-        columns={"id": "payee", "name": "Payee_Name"}
-    )
-
-    df_merged = df_txns.merge(df_cats, on="category", how="left")
-    df_merged = df_merged.merge(df_payees, on="payee", how="left")
-
-    df_merged["Payee_Name"] = (
-        df_merged["Payee_Name"].fillna(df_merged["imported_payee"]).fillna("Unknown")
-    )
-    df_merged["Category_Name"] = df_merged["Category_Name"].fillna("Uncategorized")
-
-    # Convert from negative-integer-cents to dollars
-    df_merged["amount"] = df_merged["amount"] / CENTS_DIVISOR
-
-    df_clean = df_merged[
-        df_merged["category"].notna() & ~df_merged["tombstone"].astype(bool)
-    ].copy()
-
-    df_clean["date"] = pd.to_datetime(df_clean["date"])
-    return df_clean
+    }
+    return df[df["account"].isin(onbudget_ids)].copy()
 
 
-@st.cache_data(ttl=300)
-def fetch_investment_balances() -> dict:
-    """
-    Fetch current balances for off-budget investment accounts (RESP, RRSP, TFSA).
-
-    Returns a dict like {'RESP': {name: balance}, 'RRSP': {...}, 'TFSA': {...}}.
-    """
-    accounts_res = _api_get("accounts").get("data", [])
-    balances: dict[str, dict[str, float]] = {"RESP": {}, "RRSP": {}, "TFSA": {}}
-
+def get_investment_balances(all_data: dict) -> dict:
+    balances = {"RESP": {}, "RRSP": {}, "TFSA": {}}
     resp_id = st.secrets["resp"]["identifier"].upper()
     rrsp_id = st.secrets["rrsp"]["identifier"].upper()
-    tfsa_id = "TFSA"
-
-    for acc in accounts_res:
-        if not (acc.get("offbudget") and not acc.get("closed")):
+    tfsa_id = st.secrets["tfsa"]["base"]["identifier"].upper() # P1-1: Use identifier from secrets
+    
+    for acc in all_data.get("accounts", []):
+        if acc.get("closed"):
             continue
-
+            
         name = acc["name"].upper()
         acc_type = None
-
-        # Match in priority order to avoid substring collisions
-        if resp_id in name:
-            acc_type = "RESP"
-        elif rrsp_id in name:
-            acc_type = "RRSP"
-        elif tfsa_id in name:
-            acc_type = "TFSA"
-
+        if resp_id in name: acc_type = "RESP"
+        elif rrsp_id in name: acc_type = "RRSP"
+        elif tfsa_id in name: acc_type = "TFSA"
+        
         if acc_type:
-            try:
-                bal_res = _api_get(f"accounts/{acc['id']}/balance")
-                balances[acc_type][acc["name"]] = bal_res.get("data", 0) / 100.0
-            except requests.RequestException as exc:
-                st.warning(
-                    f"Failed to fetch balance for {acc['name']}: {exc}"
-                )
-
+            raw_balance = acc.get("balance_current")
+            if raw_balance is None:
+                raw_balance = 0
+            balances[acc_type][acc["name"]] = raw_balance / 100.0
     return balances
 
 
-@st.cache_data(ttl=300)
-def fetch_underbudgeted_amounts() -> tuple[dict, list, str | None]:
+def fetch_underbudgeted_amounts(all_data: dict) -> tuple[dict, list, str | None]:
     """
-    For the current and next two months, calculate the total underfunded
-    amount across all budget categories.
-
-    Returns (results_dict, target_month_objects, error_message_or_None).
+    Calculate underfunded amounts by querying the 'zero_budgets' view in the local SQLite DB.
     """
     now = datetime.now()
     target_months = [now + relativedelta(months=i) for i in range(3)]
     months_str = [m.strftime("%Y%m") for m in target_months]
 
     results = {m: 0.0 for m in months_str}
-    error_msg = None
+    error_msg = all_data.get("error")
+
+    if error_msg:
+        return results, target_months, error_msg
 
     try:
         for m in months_str:
-            rows = query_export_db(
+            rows = query_local_db(
                 """
                 SELECT COALESCE(SUM(zero_budgets.goal - zero_budgets.amount), 0) / 100.0
                 FROM zero_budgets
@@ -211,35 +257,25 @@ def fetch_underbudgeted_amounts() -> tuple[dict, list, str | None]:
             if rows and rows[0][0]:
                 results[m] = rows[0][0]
     except Exception as e:
-        error_msg = f"Failed to fetch underbudgeted amounts: {e}"
+        error_msg = f"Failed to fetch underbudgeted amounts from SQLite: {e}"
 
     return results, target_months, error_msg
 
 
-@st.cache_data(ttl=300)
-def fetch_month_budgets(month_str: str) -> dict:
-    """
-    Fetch the assigned (budgeted) amounts for all categories for a specific month.
-
-    Args:
-        month_str: Month in YYYYMM format.
-
-    Returns a dict mapping category name -> budgeted dollar amount.
-    """
-    budgets: dict[str, float] = {}
-    try:
-        rows = query_export_db(
-            """
-            SELECT categories.name, COALESCE(zero_budgets.amount, 0) / 100.0
-            FROM zero_budgets
-            INNER JOIN categories ON categories.id = zero_budgets.category
-            WHERE month = ?
-            """,
-            (month_str,),
-        )
-        for row in rows:
-            budgets[row[0]] = row[1]
-    except Exception as e:
-        st.warning(f"Failed to fetch category budgets: {e}")
-
-    return budgets
+def get_month_budgets(all_data: dict, month_str: str) -> dict:
+    if len(month_str) == 6 and month_str.isdigit():
+        month_str = f"{month_str[:4]}-{month_str[4:]}"
+    
+    budget_data = all_data.get("budgets", {}).get(month_str, [])
+    
+    cats = []
+    if isinstance(budget_data, list):
+        for group in budget_data:
+            if isinstance(group, dict): cats.extend(group.get("categories", []))
+    elif isinstance(budget_data, dict):
+        if "categories" in budget_data: cats = budget_data["categories"]
+        elif "categoryGroups" in budget_data:
+            for group in budget_data["categoryGroups"]:
+                if isinstance(group, dict): cats.extend(group.get("categories", []))
+                
+    return {cat["name"]: cat.get("budgeted", 0) / 100.0 for cat in cats}

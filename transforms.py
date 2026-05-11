@@ -5,12 +5,13 @@ Pure functions that operate on DataFrames and dicts — no Streamlit UI calls.
 """
 
 import ast
+import calendar
 import html
+import math
 import operator
 from datetime import datetime
 
 import pandas as pd
-
 
 # --- Constants ---
 LABEL_THRESHOLD_PCT = 20
@@ -70,14 +71,184 @@ def split_income_expenses(
     """
     Split a filtered transaction DataFrame into income and expense frames.
 
-    Income amounts are flipped back to positive (they were made negative by the
-    global sign conversion in the data layer).
+    Invariant: The 'amount' column follows the 'cost_to_user' convention:
+    - Positive values represent Expenses (cash outflow).
+    - Negative values represent Income (cash inflow).
+    (P2-11)
     """
     df_income = df[df["is_income"].eq(True)].copy()
+    # Flip back to positive for UI display
     df_income["amount"] = df_income["amount"] * -1
 
     df_expenses = df[~df["is_income"].eq(True)].copy()
     return df_income, df_expenses
+
+
+def build_net_worth_series(df_all: pd.DataFrame, current_balance: float) -> pd.DataFrame:
+    """
+    Calculate historical net worth by performing a cumulative sum of all
+    transactions (including off-budget) across all accounts, anchored to the
+    known current total balance. (Correctness Fix: P1-3)
+
+    Args:
+        df_all: DataFrame containing all transactions from all accounts 
+                (on-budget + off-budget). (P2-12)
+                Expects 'amount_dollars' where Positive = Inflow.
+        current_balance: The current total balance of all active accounts in dollars.
+
+    Returns:
+        DataFrame with ['date', 'monthly_change', 'net_worth'] grouped by month.
+    """
+    if df_all.empty:
+        return pd.DataFrame()
+
+    # Guard: If data exists but current balance is negligible, we likely have all accounts 
+    # excluded. Return empty to avoid a misleading negative wealth trend. (P2-P, P2-S)
+    if abs(current_balance) < 1.0:
+        return pd.DataFrame()
+
+    # Sort by date for cumulative sum
+    df_sorted = df_all.sort_values("date")
+
+    # Group by month and sum the inflows/outflows
+    # Use 'ME' (Month End) or 'M' for resampling
+    monthly = (
+        df_sorted.set_index("date")
+        .resample("ME")["amount_dollars"]
+        .sum()
+        .reset_index()
+    )
+
+    # To anchor the history, we calculate the cumulative sum of deltas backward
+    # from the current known balance.
+    total_delta = monthly["amount_dollars"].sum()
+    history_start = current_balance - total_delta
+    
+    monthly["net_worth"] = (history_start + monthly["amount_dollars"].cumsum()).round(2)
+    monthly["amount_dollars"] = monthly["amount_dollars"].round(2)
+
+    # Rename columns for clarity
+    monthly = monthly.rename(columns={"amount_dollars": "monthly_change"})
+
+    return monthly
+
+
+def calculate_mtd_normalized_total(df: pd.DataFrame, day_cutoff: int) -> float:
+    """
+    Calculate total 'amount' for transactions where the day of month <= day_cutoff.
+    """
+    if df.empty:
+        return 0.0
+    # Create an explicit copy to avoid SettingWithCopyWarning when updating 'date'
+    df = df.copy()
+    # Ensure date column is datetime
+    df["date"] = pd.to_datetime(df["date"])
+    mask = df["date"].dt.day <= day_cutoff
+    return float(df[mask]["amount"].sum())
+
+
+def calculate_mom_metrics(
+    df_current: pd.DataFrame, 
+    df_prev: pd.DataFrame, 
+    current_date: datetime
+) -> dict:
+    """
+    Compare current month MTD with previous month MTD.
+    """
+    day_cutoff = current_date.day
+    
+    current_mtd = calculate_mtd_normalized_total(df_current, day_cutoff)
+    prev_mtd = calculate_mtd_normalized_total(df_prev, day_cutoff)
+    
+    delta = current_mtd - prev_mtd
+    pct_change = (delta / abs(prev_mtd)) * 100 if prev_mtd != 0 else 0.0
+    
+    return {
+        "current_mtd": round(current_mtd, 2),
+        "prev_mtd": round(prev_mtd, 2),
+        "delta": round(delta, 2),
+        "pct_change": round(pct_change, 2)
+    }
+
+
+def calculate_yoy_metrics(
+    df_current: pd.DataFrame, 
+    df_last_year: pd.DataFrame, 
+    current_date: datetime
+) -> dict:
+    """
+    Compare current month MTD with same month last year MTD.
+    """
+    day_cutoff = current_date.day
+    
+    current_mtd = calculate_mtd_normalized_total(df_current, day_cutoff)
+    last_year_mtd = calculate_mtd_normalized_total(df_last_year, day_cutoff)
+    
+    delta = current_mtd - last_year_mtd
+    pct_change = (delta / abs(last_year_mtd)) * 100 if last_year_mtd != 0 else 0.0
+    
+    return {
+        "current_mtd": round(current_mtd, 2),
+        "last_year_mtd": round(last_year_mtd, 2),
+        "delta": round(delta, 2),
+        "pct_change": round(pct_change, 2)
+    }
+
+
+def calculate_budget_pacing(spent: float, budget: float, current_date: datetime) -> float:
+    """
+    Calculate budget pacing metric: (spent / budget) - (current_day / days_in_month).
+    Positive = Overspending relative to time elapsed.
+    """
+    if budget <= 0:
+        return 0.0
+    
+    _, last_day = calendar.monthrange(current_date.year, current_date.month)
+    day_cutoff = min(current_date.day, last_day)
+    
+    time_pct = day_cutoff / last_day
+    spent_pct = spent / budget
+    
+    return round(spent_pct - time_pct, 4)
+
+
+def calculate_milestone_months(
+    current_balance: float,
+    monthly_savings: float,
+    target_amount: float,
+    annual_return_rate: float
+) -> int:
+    """
+    Calculate the number of months to reach a target amount with monthly contributions
+    and compound interest.
+    """
+    if current_balance >= target_amount:
+        return 0
+    
+    # If no savings and no growth (or negative), will never reach
+    if monthly_savings <= 0 and annual_return_rate <= 0:
+        return 9999 # Representing "Infinity"
+    
+    monthly_rate = annual_return_rate / 12
+    
+    # Linear calculation for 0% return
+    if monthly_rate == 0:
+        if monthly_savings <= 0: return 9999
+        needed = target_amount - current_balance
+        return int(needed / monthly_savings) + (1 if needed % monthly_savings > 0 else 0)
+    
+    # Compound interest formula
+    try:
+        numerator = target_amount + (monthly_savings / monthly_rate)
+        denominator = current_balance + (monthly_savings / monthly_rate)
+        
+        if numerator <= 0 or denominator <= 0:
+             return 9999
+             
+        n = math.log(numerator / denominator) / math.log(1 + monthly_rate)
+        return int(math.ceil(n))
+    except (ValueError, ZeroDivisionError):
+        return 9999
 
 
 # --- HTML Rendering Helpers ---
@@ -136,6 +307,7 @@ def build_category_bar_html(
     cat: str,
     spent: float,
     budgeted: float,
+    time_elapsed_pct: float | None = None,
 ) -> str:
     """Build an HTML bar showing spend progress against a category budget."""
     left = budgeted - spent
@@ -160,6 +332,15 @@ def build_category_bar_html(
     safe_cat = _esc(cat)
     left_str = f"${left:,.2f} left" if left >= 0 else f"${abs(left):,.2f} over!"
 
+    marker_html = ""
+    if time_elapsed_pct is not None:
+        marker_pos = min(time_elapsed_pct * 100, 100.0)
+        marker_html = (
+            f'<div style="position: absolute; top: 0; left: {marker_pos}%; '
+            f'width: 3px; height: 100%; background-color: rgba(255,255,255,0.8); '
+            f'z-index: 5; border-radius: 2px;"></div>'
+        )
+
     return (
         f'<div style="margin-bottom: 18px;">'
         f'<div style="display: flex; justify-content: space-between; margin-bottom: 6px; '
@@ -168,6 +349,7 @@ def build_category_bar_html(
         f'<span style="color: {color};">{_esc(left_str)}</span></div>'
         f'<div style="position: relative; background-color: {bg_color}; border-radius: 6px; '
         f'height: 26px; width: 100%; border: 1px solid {color}40; overflow: hidden;">'
+        f'{marker_html}'
         f'<div style="background-color: {color}; width: {vis_pct}%; height: 100%; '
         f'border-radius: 4px;"></div>'
         f'<div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; '
@@ -217,7 +399,7 @@ def build_forecast_data(
                 {
                     "Year": future_year,
                     "Account": name,
-                    "Projected Balance": current_balance,
+                    "Projected Balance": round(current_balance, 2),
                     "Label": f"${current_balance:,.0f}" if is_milestone else "",
                 }
             )
@@ -225,7 +407,7 @@ def build_forecast_data(
             contrib = contribution_fn(name, year_offset)
             current_balance = (current_balance * (1 + rate)) + contrib
 
-    return forecast_data, total_current, total_halfway, total_final
+    return forecast_data, round(total_current, 2), round(total_halfway, 2), round(total_final, 2)
 
 
 # --- Sankey Diagram Data ---

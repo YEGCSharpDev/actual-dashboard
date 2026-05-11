@@ -1,0 +1,12 @@
+{
+  "name": "actual-dashboard-sidecar",
+  "version": "1.0.0",
+  "description": "Node.js sidecar for Actual Budget API integration",
+  "main": "actual-helper.js",
+  "dependencies": {
+    "@actual-app/api": "^26.5.2"
+  },
+  "scripts": {
+    "test-connection": "node actual-helper.js --test-connection"
+  }
+}

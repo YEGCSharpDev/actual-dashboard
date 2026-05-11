@@ -2,7 +2,7 @@
 # ACTUAL BUDGET STREAMLIT DASHBOARD (PARAMETERIZED)
 # ==============================================================================
 # 
-# STEP 0: This container needs https://github.com/jhonderson/actual-http-api running for REST API calls.
+# STEP 0: This container uses a Node.js sidecar with the official Actual API.
 #
 # STEP 1: In the mounted directory create secrets.toml file
 #
@@ -53,13 +53,15 @@ version: '3.8'
 
 services:
   actual-dashboard:
-    image: preface8675/actual-dashboard:latest  
+    image: preface8675/actual-dashboard:1.0.0
+  
     container_name: actual-dashboard
     restart: unless-stopped
     ports:
       - "8501:8501"
     volumes:
       - /mnt/Tank/AppData/config/Actual-Dashboard:/app/.streamlit:ro
+      - /mnt/Tank/AppData/config/Actual-Dashboard/data:/app/.actual-data
     environment:
       - PUID=568
       - PGID=3002

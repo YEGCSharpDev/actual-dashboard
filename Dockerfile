@@ -1,4 +1,12 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
+
+# Install Node.js and npm for Actual CLI
+RUN apt-get update && apt-get install -y \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -6,8 +14,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code
-COPY app.py data.py transforms.py .
+# Copy the application and sidecar code
+COPY app.py data.py transforms.py actual-helper.js package.json package-lock.json .
+
+# Install sidecar dependencies (P0-Z: use npm ci for immutable builds)
+RUN npm ci
 
 # Expose the default Streamlit port
 EXPOSE 8501
