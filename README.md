@@ -1,20 +1,30 @@
-# actual-dashboard
+# Actual Budget Dashboard
 
 ~ 70% vibe-coded for my use with Gemini 3.1 Pro
 
-Feel Free to fork it for your own use, I have paramterized as much as I can
+Feel free to fork it for your own use; I have parameterized as much as I can.
 
 ---
 
 ## Features
 
-- Monthly Spending Analytics: Monthly expenses are aggregated and visualized. A sortable transaction log and an Altair-powered spending bar chart are dynamically generated for any selected month.
+- **Monthly Spending Analytics:** Monthly expenses are aggregated by category and visualized using interactive Plotly Sankey diagrams.
+- **Budget Health Tracking:** Real-time monitoring of underfunded envelopes for current and future months using official ActualQL queries.
+- **Investment Progress:** Year-to-Date (YTD) contribution tracking for specialized accounts (e.g., TFSA).
+- **Interactive Forecasting:** Dynamic forecasting for investment horizons (RESP, RRSP, TFSA), allowing for real-time adjustment of expected YoY returns.
+- **Historical Net Worth:** Anchored tracking of total wealth across all accounts (on-budget and off-budget) over your entire budget history.
+- **Advanced Analytics:** MTD-normalized comparisons and hierarchical spending Treemaps.
 
-- Envelope Health Checks: Underfunded budget amounts for the current month and the next two consecutive months are calculated and displayed with color-coded alerts. This is achieved by securely fetching the Actual Budget SQLite database export in-memory and querying the internal envelope goals.
+---
 
-- Contribution Tracking: Year-to-date (YTD) investment contributions are tracked against an adjustable annual limit. Contribution velocity is charted over time, and progress is visually represented via dynamic metric columns.
+## Technical Architecture
 
-- Interactive Investment Forecasting: Tabbed forecasting models are available for various investment vehicles (e.g., RESP, RRSP, TFSA). Interactive sliders allow the expected Year-over-Year (YoY) return percentage to be adjusted in real-time. Current, halfway, and final projected balances are calculated automatically based on parameterized contribution horizons, expected returns, and custom catch-up rules.
+This dashboard uses a **Hybrid Sidecar Architecture** to provide high performance while bypassing server-side rate limits:
+
+1.  **Node.js Sidecar (`actual-helper.js`):** A lightweight helper that uses the official `@actual-app/api` to establish a single persistent session. It synchronizes your budget to a local cache and fetches a comprehensive data snapshot in one batch.
+2.  **Python Data Layer (`data.py`):** Invokes the sidecar once per hour (via a high-TTL cache) and performs precise analytical queries against the local synchronized SQLite database.
+3.  **Streamlit UI (`app.py`):** A modern, reactive interface built for rapid financial exploration.
+
 ---
 
 ## Local Development & Testing
@@ -34,22 +44,52 @@ default_return_pct = 5.0
 horizon_years = 18
 monthly_contribution = 200
 
-# ... see app.py for all required sections (rrsp, tfsa, categories)
+[rrsp]
+identifier = "RRSP"
+default_return_pct = 6.0
+horizon_years = 25
+annual_contribution = 5000
+
+[tfsa]
+horizon_years = 20
+annual_room = 7000
+[tfsa.base]
+identifier = "Wealthsimple"
+default_return_pct = 5.5
+monthly_contribution = 500
+[tfsa.catchup]
+identifier = "Questrade"
+default_return_pct = 7.0
+catchup_year_contribution = 10000
+
+[categories]
+tfsa_tracking = ["TFSA Contribution"]
+budget_tracking = ["Groceries", "Rent", "Utilities"]
 ```
 
 ### 2. Run via Nix (Recommended)
-If you use Nix, the environment is fully automated:
+If you use Nix, the environment is fully automated and isolated:
 
 ```bash
 nix-shell
 streamlit run app.py
 ```
-The shell hook will automatically install the `@actual-app/cli` into a local `.npm-global` folder and add it to your path.
+The shell hook will automatically install Node.js dependencies and provide a pre-configured Python 3.12 environment with `ruff` and `pytest` available.
 
 ### 3. Run via Docker
-To run the dashboard in a containerized environment:
+To run the dashboard in a containerized production environment:
 
 ```bash
 docker-compose up --build
 ```
 The dashboard will be available at `http://localhost:8501`.
+
+---
+
+## Quality Assurance
+
+The project maintains a rigorous quality bar enforced via CI:
+
+- **Linting:** `ruff check .`
+- **Testing:** `pytest --cov=. tests/`
+- **Contract Validation:** `node actual-helper.js --smoke-init`

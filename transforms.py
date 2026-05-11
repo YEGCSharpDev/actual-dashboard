@@ -12,8 +12,6 @@ import operator
 from datetime import datetime
 
 import pandas as pd
-from dateutil.relativedelta import relativedelta
-
 
 # --- Constants ---
 LABEL_THRESHOLD_PCT = 20
@@ -104,9 +102,9 @@ def build_net_worth_series(df_all: pd.DataFrame, current_balance: float) -> pd.D
     if df_all.empty:
         return pd.DataFrame()
 
-    # Guard: If data exists but current balance is 0.0, we likely have all accounts 
-    # excluded. Return empty to avoid a misleading negative wealth trend. (P2-P)
-    if current_balance == 0.0:
+    # Guard: If data exists but current balance is negligible, we likely have all accounts 
+    # excluded. Return empty to avoid a misleading negative wealth trend. (P2-P, P2-S)
+    if abs(current_balance) < 1.0:
         return pd.DataFrame()
 
     # Sort by date for cumulative sum

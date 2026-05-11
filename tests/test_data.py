@@ -1,6 +1,5 @@
-import pandas as pd
-import pytest
 from data import normalize_transactions
+
 
 def test_normalize_transactions_empty():
     assert normalize_transactions([]).empty

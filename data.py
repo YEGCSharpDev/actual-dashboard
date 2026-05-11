@@ -9,7 +9,7 @@ import sqlite3
 import subprocess
 import threading
 from datetime import datetime
-from typing import TypedDict, List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
 try:
     import fcntl
@@ -24,7 +24,6 @@ from dateutil.relativedelta import relativedelta
 class DashboardData(TypedDict):
     """Explicit type for the unified dashboard data blob. (P2-J)"""
     accounts: List[Dict[str, Any]]
-    categories: List[Dict[str, Any]]
     transactions: pd.DataFrame
     budgets: Dict[str, Any]
     error: Optional[str]
@@ -108,7 +107,8 @@ def fetch_all_dashboard_data() -> dict:
                     fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     return {"error": "Another process is currently syncing. Please wait.", 
-                            "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
+                            "accounts": [], "transactions": pd.DataFrame(), "budgets": {}
+}
 
                 return _invoke_sidecar(args, env)
         else:
@@ -135,11 +135,13 @@ def _invoke_sidecar(args, env) -> DashboardData:
             process.kill()
             process.communicate()
             return {"error": "Sidecar timed out — check server connectivity", 
-                    "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
+                    "accounts": [], "transactions": pd.DataFrame(), "budgets": {}
+}
 
         if process.returncode != 0:
             return {"error": f"Sidecar failed: {stderr}", 
-                    "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
+                    "accounts": [], "transactions": pd.DataFrame(), "budgets": {}
+}
         
         # Extract JSON between markers
         output = stdout
@@ -158,7 +160,8 @@ def _invoke_sidecar(args, env) -> DashboardData:
         return res
     except Exception as e:
         return {"error": str(e), 
-                "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
+                "accounts": [], "transactions": pd.DataFrame(), "budgets": {}
+}
 
 
 # --- SQLite Helpers ---

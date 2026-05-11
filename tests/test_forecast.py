@@ -1,5 +1,6 @@
 from transforms import build_forecast_data
 
+
 def test_forecast_simple_growth_no_contribution():
     accounts = {"TFSA-A": 1000.0}
     data, t_curr, t_half, t_final = build_forecast_data(

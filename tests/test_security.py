@@ -1,5 +1,7 @@
 import pytest
+
 from transforms import parse_math_input
+
 
 def test_parse_basic_arithmetic():
     assert parse_math_input("500+200") == 700.0

@@ -42,7 +42,6 @@ from transforms import (
     split_income_expenses,
 )
 
-
 # --- Page Config ---
 st.set_page_config(page_title="Actual Budget Dashboard", layout="wide")
 
@@ -75,17 +74,18 @@ def render_forecast_chart(
     total_halfway: float,
     total_final: float,
 ):
+    """Shared logic for rendering investment line charts with milestones."""
     halfway_offset = years_to_track // 2
 
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("Current Total", f"${total_current:,.2f}")
     mc2.metric(
         f"Halfway Projection ({current_year + halfway_offset})",
-        f"${total_halfway:,.0f}",
+        f"${total_halfway:,.2f}",
     )
     mc3.metric(
         f"Final Projection ({current_year + years_to_track})",
-        f"${total_final:,.0f}",
+        f"${total_final:,.2f}",
     )
 
     df_forecast = pd.DataFrame(forecast_data)
@@ -126,6 +126,7 @@ def render_forecast_section(
     return_rate: float,
     annual_contribution: float = 0,
 ):
+    """High-level wrapper for an investment category (e.g. RRSP)."""
     if not account_dict:
         st.info("No accounts found for this category.")
         return
@@ -228,108 +229,107 @@ tab_overview, tab_net_worth, tab_investments, tab_advanced = st.tabs([
 ])
 
 with tab_overview:
-    df_income, df_expenses = split_income_expenses(df_filtered)
-
     # ── Monthly Overview ──────────────────────────────────────────────────────────
     st.subheader("Monthly Overview")
 
-    total_income = round(df_income["amount"].sum(), 2)
-    total_spent = round(df_expenses["amount"].sum(), 2)
-    net_income = round(total_income - total_spent, 2)
+    if not df_filtered.empty: # Consolidated Guard (4.6)
+        df_income, df_expenses = split_income_expenses(df_filtered)
 
-    col_inc, col_exp, col_net, col_forecast = st.columns(4)
+        total_income = round(df_income["amount"].sum(), 2)
+        total_spent = round(df_expenses["amount"].sum(), 2)
+        net_income = round(total_income - total_spent, 2)
 
-    with col_inc:
-        st.metric("Actual Income", f"${total_income:,.2f}")
-        add_inc_str = st.text_input(
-            "Forecasted Income (e.g. 500+200)", value="0", key="add_inc"
-        )
-        expected_income = round(total_income + parse_math_input(add_inc_str), 2)
+        col_inc, col_exp, col_net, col_forecast = st.columns(4)
 
-    with col_exp:
-        st.metric("Actual Expenses", f"${total_spent:,.2f}")
-        add_exp_str = st.text_input(
-            "Forecasted Expense (e.g. 100+50)", value="0", key="add_exp"
-        )
-        expected_expenses = round(total_spent + parse_math_input(add_exp_str), 2)
-
-    with col_net:
-        if total_income > 0:
-            savings_rate = round((net_income / total_income) * 100, 2)
-            savings_delta = f"{savings_rate:.1f}% savings rate"
-        else:
-            savings_delta = None
-        st.metric(
-            "Actual Net",
-            f"${net_income:,.2f}",
-            delta=savings_delta,
-            delta_color="normal",
-        )
-
-    with col_forecast:
-        forecast_net = round(expected_income - expected_expenses, 2)
-        if expected_income > 0:
-            forecast_savings_rate = round((forecast_net / expected_income) * 100, 2)
-            forecast_delta = f"{forecast_savings_rate:.1f}% expected savings"
-        else:
-            forecast_delta = None
-        st.metric(
-            "Expected Net",
-            f"${forecast_net:,.2f}",
-            delta=forecast_delta,
-            delta_color="normal",
-        )
-
-    # ── Income / Expense Progress Bars ───────────────────────────────────────────
-    max_expected = max(expected_income, expected_expenses, 1.0)
-    inc_pct = min((total_income / max_expected) * 100, 100.0)
-    exp_pct = min((total_spent / max_expected) * 100, 100.0)
-
-    st.markdown(
-        f'<div style="margin-bottom: 25px;">'
-        f"{build_progress_bar_html(inc_pct, COLOR_GREEN, COLOR_GREEN_BG, 'rgba(40,167,69,0.3)', 'Income', f'${total_income:,.2f}', f'${expected_income:,.0f}')}"
-        f"{build_progress_bar_html(exp_pct, COLOR_RED, COLOR_RED_BG, 'rgba(220,53,69,0.3)', 'Expenses', f'${total_spent:,.2f}', f'${expected_expenses:,.0f}')}"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
-    # ── Envelope Health Checks ───────────────────────────────────────────────────
-    st.subheader("Future Envelope Health")
-    underbudget_data, target_months, underbudget_error = fetch_underbudgeted_amounts(all_data)
-    if underbudget_error:
-        st.warning(underbudget_error)
-
-    m_cols = st.columns(3)
-    for i, m_obj in enumerate(target_months):
-        m_str = m_obj.strftime("%Y%m")
-        m_label = m_obj.strftime("%b %Y")
-        val = underbudget_data.get(m_str, 0.0)
-
-        if val > 0:
-            m_cols[i].metric(
-                label=f"Underfunded ({m_label})",
-                value=f"${val:,.2f}",
-                delta="Action Required",
-                delta_color="inverse",
+        with col_inc:
+            st.metric("Actual Income", f"${total_income:,.2f}")
+            add_inc_str = st.text_input(
+                "Forecasted Income (e.g. 500+200)", value="0", key="add_inc"
             )
-        else:
-            m_cols[i].metric(
-                label=f"Underfunded ({m_label})",
-                value=f"${val:,.2f}",
-                delta="Fully Funded",
+            expected_income = round(total_income + parse_math_input(add_inc_str), 2)
+
+        with col_exp:
+            st.metric("Actual Expenses", f"${total_spent:,.2f}")
+            add_exp_str = st.text_input(
+                "Forecasted Expense (e.g. 100+50)", value="0", key="add_exp"
+            )
+            expected_expenses = round(total_spent + parse_math_input(add_exp_str), 2)
+
+        with col_net:
+            if total_income > 0:
+                savings_rate = round((net_income / total_income) * 100, 2)
+                savings_delta = f"{savings_rate:.1f}% savings rate"
+            else:
+                savings_delta = None
+            st.metric(
+                "Actual Net",
+                f"${net_income:,.2f}",
+                delta=savings_delta,
                 delta_color="normal",
             )
 
-    st.markdown("---")
+        with col_forecast:
+            forecast_net = round(expected_income - expected_expenses, 2)
+            if expected_income > 0:
+                forecast_savings_rate = round((forecast_net / expected_income) * 100, 2)
+                forecast_delta = f"{forecast_savings_rate:.1f}% expected savings"
+            else:
+                forecast_delta = None
+            st.metric(
+                "Expected Net",
+                f"${forecast_net:,.2f}",
+                delta=forecast_delta,
+                delta_color="normal",
+            )
 
-    # ── Budgeted vs Spent (Key Categories) ──────────────────────────────────────
-    st.subheader("Key Category Tracking")
+        # ── Income / Expense Progress Bars ───────────────────────────────────────────
+        max_expected = max(expected_income, expected_expenses, 1.0)
+        inc_pct = min((total_income / max_expected) * 100, 100.0)
+        exp_pct = min((total_spent / max_expected) * 100, 100.0)
 
-    tracked_categories = st.secrets["categories"].get("budget_tracking", [])
+        st.markdown(
+            f'<div style="margin-bottom: 25px;">'
+            f"{build_progress_bar_html(inc_pct, COLOR_GREEN, COLOR_GREEN_BG, 'rgba(40,167,69,0.3)', 'Income', f'${total_income:,.2f}', f'${expected_income:,.0f}')}"
+            f"{build_progress_bar_html(exp_pct, COLOR_RED, COLOR_RED_BG, 'rgba(220,53,69,0.3)', 'Expenses', f'${total_spent:,.2f}', f'${expected_expenses:,.0f}')}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
-    if tracked_categories:
-        if not df_filtered.empty:
-            # P2-7: Guard NaT crash by ensuring df_filtered is not empty
+        # ── Envelope Health Checks ───────────────────────────────────────────────────
+        st.subheader("Future Envelope Health")
+        underbudget_data, target_months, underbudget_error = fetch_underbudgeted_amounts(all_data)
+        if underbudget_error:
+            st.warning(underbudget_error)
+
+        m_cols = st.columns(3)
+        for i, m_obj in enumerate(target_months):
+            m_str = m_obj.strftime("%Y%m")
+            m_label = m_obj.strftime("%b %Y")
+            val = underbudget_data.get(m_str, 0.0)
+
+            if val > 0:
+                m_cols[i].metric(
+                    label=f"Underfunded ({m_label})",
+                    value=f"${val:,.2f}",
+                    delta="Action Required",
+                    delta_color="inverse",
+                )
+            else:
+                m_cols[i].metric(
+                    label=f"Underfunded ({m_label})",
+                    value=f"${val:,.2f}",
+                    delta="Fully Funded",
+                    delta_color="normal",
+                )
+
+        st.markdown("---")
+
+        # ── Budgeted vs Spent (Key Categories) ──────────────────────────────────────
+        st.subheader("Key Category Tracking")
+
+        tracked_categories = st.secrets["categories"].get("budget_tracking", [])
+
+        if tracked_categories:
             db_month_str = df_filtered["date"].max().strftime("%Y-%m")
             monthly_budgets = get_month_budgets(all_data, db_month_str)
 
@@ -341,16 +341,13 @@ with tab_overview:
                     unsafe_allow_html=True,
                 )
         else:
-            st.info("No data selected for budget tracking.")
-    else:
-        st.info("No budget tracking categories defined in secrets.toml.")
+            st.info("No budget tracking categories defined in secrets.toml.")
 
-    st.markdown("---")
+        st.markdown("---")
 
-    # ── Sankey Diagram ───────────────────────────────────────────────────────────
-    st.subheader("Monthly Cashflow (Income & Expenses)")
+        # ── Sankey Diagram ───────────────────────────────────────────────────────────
+        st.subheader("Monthly Cashflow (Income & Expenses)")
 
-    if not df_filtered.empty: # P1-4 Consolidated guard
         inc_summary = (
             df_income.groupby("Category_Name")["amount"]
             .sum()
@@ -401,20 +398,17 @@ with tab_overview:
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("No income or expense data found to chart for this selection.")
-    else:
-        st.info("No transactions in the selected range.")
 
-    st.markdown("---")
+        st.markdown("---")
 
-    # ── Transaction Log ──────────────────────────────────────────────────────────
-    st.subheader("Transaction Log")
-    if not df_filtered.empty:
+        # ── Transaction Log ──────────────────────────────────────────────────────────
+        st.subheader("Transaction Log")
         display_df = df_filtered[["date", "Payee_Name", "Category_Name", "amount"]].copy()
         display_df = display_df.sort_values(by="date", ascending=False)
         display_df["date"] = display_df["date"].dt.strftime("%Y-%m-%d")
         st.dataframe(display_df, width="stretch", hide_index=True)
     else:
-        st.info("No transactions to display.")
+        st.info("No transactions found for the current filters.")
 
 with tab_net_worth:
     st.subheader("Historical Net Worth")
@@ -461,7 +455,11 @@ with tab_net_worth:
 
         st.altair_chart(nw_chart, width="stretch")
     else:
-        st.info("Insufficient data to calculate net worth history.")
+        # P2-S: Provide better feedback for zero-balance scenarios
+        if abs(current_assets) < 1.0:
+            st.warning("All active accounts currently have a zero balance. Trend visualization requires non-zero starting data.")
+        else:
+            st.info("Insufficient data to calculate net worth history.")
 
 with tab_investments:
     # ── TFSA Contributions (YTD) ────────────────────────────────────────────────

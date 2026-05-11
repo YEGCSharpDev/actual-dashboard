@@ -1,5 +1,7 @@
 import pandas as pd
+
 from transforms import build_sankey_data
+
 
 def test_sankey_indices_resolve():
     inc = pd.DataFrame({"Category_Name": ["Salary"], "amount": [3000]})

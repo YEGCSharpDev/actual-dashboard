@@ -1,5 +1,7 @@
 import pandas as pd
+
 from transforms import build_net_worth_series
+
 
 def test_anchors_on_current_balance():
     df = pd.DataFrame({

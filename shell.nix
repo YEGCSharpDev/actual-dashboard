@@ -9,6 +9,7 @@ pkgs.mkShell {
       plotly
       python-dateutil
       pytest
+      ruff
     ]))
     pkgs.nodejs
   ];
@@ -28,11 +29,11 @@ pkgs.mkShell {
     echo "Node $(node --version)"
     
     if ! command -v actual &> /dev/null; then
-      echo "Installing Actual dependencies locally..."
-      npm install -g @actual-app/cli @actual-app/api --quiet
+      echo "Installing sidecar dependencies locally..."
+      npm install @actual-app/cli @actual-app/api --quiet
     fi
 
-    echo "Actual CLI $(actual --version)"
+    echo "Local npm environment initialized in .npm-global"
     echo "Run with: streamlit run app.py"
   '';
 }

@@ -1,8 +1,9 @@
 # tests/test_app_startup.py
-from streamlit.testing.v1 import AppTest
-import pandas as pd
 from unittest.mock import patch
-from datetime import datetime
+
+import pandas as pd
+from streamlit.testing.v1 import AppTest
+
 
 def test_startup_when_no_transactions_today():
     """Reproducer for P0-Y: data max < today must not crash date_input."""

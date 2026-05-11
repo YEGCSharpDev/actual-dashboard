@@ -32,12 +32,13 @@ async function main() {
             console.log("actual-helper: library successfully loaded and initialized");
             process.exit(0);
         } catch (err) {
-            // We expect a connection error, but 'MODULE_NOT_FOUND' or 'CompileError' would fail here
-            if (err.message.includes('connect')) {
-                console.log("actual-helper: library successfully loaded (connection failed as expected)");
+            // P2-R Fix: Match exact error codes for connection failures
+            const expectedCodes = ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT'];
+            if (expectedCodes.includes(err.code) || err.message.includes('connect')) {
+                console.log(`actual-helper: library loaded (connection failed as expected: ${err.code || err.message})`);
                 process.exit(0);
             }
-            console.error(`actual-helper: smoke-init failed: ${err.message}`);
+            console.error(`actual-helper: smoke-init failed with unexpected error: ${err.message}`);
             process.exit(1);
         }
     }
@@ -65,7 +66,6 @@ async function main() {
         // 3. Data Retrieval
         const results = {
             accounts: [],
-            categories: [],
             transactions: [],
             budgets: {}, // month_str -> category_data
         };
@@ -79,11 +79,6 @@ async function main() {
                 balance_current: acc.closed ? null : await api.getAccountBalance(acc.id) 
             };
         }));
-
-        // Fetch Categories with goal metadata
-        results.categories = await api.runQuery(
-            api.q('categories').select(['id', 'name', 'goal_def', 'is_income', 'group.name'])
-        ).then(res => res.data);
 
         // Fetch All Transactions (current year + history)
         results.transactions = await api.runQuery(
