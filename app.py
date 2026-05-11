@@ -421,15 +421,11 @@ with tab_net_worth:
         prev_nw = df_nw.iloc[-2]["net_worth"] if len(df_nw) > 1 else current_nw
         nw_delta = current_nw - prev_nw
         
-        # P2-8: Pass numeric delta to st.metric for robust formatting
-        # P2-6: Label relative to previous month
-        nw_delta_color = "normal" if nw_delta >= 0 else "inverse"
-        
         st.metric(
             "Current Net Worth", 
             f"${current_nw:,.2f}", 
             delta=nw_delta,
-            delta_color=nw_delta_color,
+            delta_color="normal",
             help="Change vs previous month-end balance."
         )
 
