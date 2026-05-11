@@ -803,6 +803,3 @@ with tab_advanced:
                 st.metric("Retirement Goal", "Never", delta="Increase savings!")
 
         st.caption(f"Calculations start from your current net worth of ${current_assets:,.2f}")
-"Never", delta="Increase savings!")
-
-        st.caption(f"Calculations start from your current net worth of ${current_assets:,.2f}")
