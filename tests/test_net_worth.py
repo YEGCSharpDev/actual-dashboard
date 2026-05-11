@@ -18,10 +18,11 @@ def test_anchors_on_current_balance():
 def test_empty_returns_empty():
     assert build_net_worth_series(pd.DataFrame(), 1000.0).empty
 
-def test_zero_current_balance_still_walks():
+def test_zero_current_balance_returns_empty():
+    """Aligns with defensive P2-P logic: return empty if balance is 0.0 to avoid misleading trends."""
     df = pd.DataFrame({
         "date": pd.to_datetime(["2024-01-15"]),
         "amount_dollars": [100.0],
     })
     out = build_net_worth_series(df, current_balance=0.0)
-    assert out.iloc[-1]["net_worth"] == 0.0
+    assert out.empty
