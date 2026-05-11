@@ -53,7 +53,8 @@ version: '3.8'
 
 services:
   actual-dashboard:
-    image: preface8675/actual-dashboard:latest  
+    image: preface8675/actual-dashboard:1.0.0
+  
     container_name: actual-dashboard
     restart: unless-stopped
     ports:

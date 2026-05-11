@@ -62,10 +62,14 @@ for section in _REQUIRED_SECTIONS:
         st.stop()
 
 
+# --- Constants ---
+CURRENT_YEAR = datetime.now().year
+
+
 # --- Shared Chart Renderers ---
 def render_forecast_chart(
     forecast_data: list,
-    current_year: int,
+    CURRENT_YEAR: int,
     years_to_track: int,
     total_current: float,
     total_halfway: float,
@@ -76,11 +80,11 @@ def render_forecast_chart(
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("Current Total", f"${total_current:,.2f}")
     mc2.metric(
-        f"Halfway Projection ({current_year + halfway_offset})",
+        f"Halfway Projection ({CURRENT_YEAR + halfway_offset})",
         f"${total_halfway:,.0f}",
     )
     mc3.metric(
-        f"Final Projection ({current_year + years_to_track})",
+        f"Final Projection ({CURRENT_YEAR + years_to_track})",
         f"${total_final:,.0f}",
     )
 
@@ -127,19 +131,18 @@ def render_forecast_section(
         return
 
     st.subheader(title)
-    current_year_val = datetime.now().year
 
     forecast_data, total_current, total_halfway, total_final = build_forecast_data(
         account_dict,
         years_to_track,
-        current_year_val,
+        CURRENT_YEAR,
         return_rate_fn=lambda _name: return_rate,
         contribution_fn=lambda _name, _offset: annual_contribution,
     )
 
     render_forecast_chart(
         forecast_data,
-        current_year_val,
+        CURRENT_YEAR,
         years_to_track,
         total_current,
         total_halfway,
@@ -415,6 +418,7 @@ with tab_net_worth:
     st.subheader("Historical Net Worth")
     # All transactions already fetched in all_data
     # Correctness Fix P1-3: Anchor on current known balances (using balance_current from API)
+    # Note: balance_current is returned in integer cents by the Actual API. (4.5)
     current_assets = round(sum((acc.get("balance_current") or 0) for acc in all_data.get("accounts", []) if not acc.get("closed")) / 100.0, 2)
     df_nw = build_net_worth_series(all_data["transactions"], current_assets)
 
@@ -461,11 +465,10 @@ with tab_investments:
     # ── TFSA Contributions (YTD) ────────────────────────────────────────────────
     st.header("TFSA Contributions (YTD)")
 
-    current_year_val = datetime.now().year
     tfsa_cats = st.secrets["categories"]["tfsa_tracking"]
     
     # Filter to current year only
-    df_ytd = df[df["date"].dt.year == current_year_val]
+    df_ytd = df[df["date"].dt.year == CURRENT_YEAR]
     df_ytd_expenses = df_ytd[~df_ytd["is_income"].eq(True)]
     df_tfsa = df_ytd_expenses[df_ytd_expenses["Category_Name"].isin(tfsa_cats)].copy()
 
@@ -627,14 +630,14 @@ with tab_investments:
             forecast_data, total_current, total_halfway, total_final = build_forecast_data(
                 tfsa_balances,
                 years_to_track,
-                current_year_val,
+                CURRENT_YEAR,
                 return_rate_fn=_tfsa_return_rate,
                 contribution_fn=_tfsa_contribution,
             )
 
             render_forecast_chart(
                 forecast_data,
-                current_year_val,
+                CURRENT_YEAR,
                 years_to_track,
                 total_current,
                 total_halfway,

@@ -9,10 +9,20 @@ import sqlite3
 import subprocess
 import threading
 from datetime import datetime
+from typing import TypedDict, List, Dict, Any, Optional
 
 import pandas as pd
 import streamlit as st
 from dateutil.relativedelta import relativedelta
+
+
+class DashboardData(TypedDict):
+    """Explicit type for the unified dashboard data blob. (P2-J)"""
+    accounts: List[Dict[str, Any]]
+    categories: List[Dict[str, Any]]
+    transactions: pd.DataFrame
+    budgets: Dict[str, Any]
+    error: Optional[str]
 
 
 # --- Concurrency & Path Control ---
@@ -83,9 +93,17 @@ def fetch_all_dashboard_data() -> dict:
     args = ["node", "actual-helper.js"]
 
     with _cli_lock:
-        try:
-            # Use Popen + communicate for safe large payload handling (P2-D)
-            process = subprocess.Popen(
+        with open(lock_path, "w") as lock_file:
+            try:
+                # Exclusive non-blocking lock
+                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {"error": "Another process is currently syncing. Please wait.", 
+                        "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
+
+            try:
+                # Use Popen + communicate for safe large payload handling (P2-D)
+                process = subprocess.Popen(
                 args,
                 env=env,
                 stdout=subprocess.PIPE,

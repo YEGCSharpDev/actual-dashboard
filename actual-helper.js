@@ -21,6 +21,27 @@ async function main() {
         process.exit(0);
     }
 
+    // P2-R: Smoke test that exercises the library initialization
+    if (process.argv.includes('--smoke-init')) {
+        console.log("actual-helper: smoke-init mode");
+        try {
+            const smokeDir = path.join(process.cwd(), '.smoke-test-data');
+            if (!fs.existsSync(smokeDir)) fs.mkdirSync(smokeDir);
+            await api.init({ dataDir: smokeDir, serverURL: 'http://localhost' });
+            await api.shutdown();
+            console.log("actual-helper: library successfully loaded and initialized");
+            process.exit(0);
+        } catch (err) {
+            // We expect a connection error, but 'MODULE_NOT_FOUND' or 'CompileError' would fail here
+            if (err.message.includes('connect')) {
+                console.log("actual-helper: library successfully loaded (connection failed as expected)");
+                process.exit(0);
+            }
+            console.error(`actual-helper: smoke-init failed: ${err.message}`);
+            process.exit(1);
+        }
+    }
+
     if (!serverUrl || !password || !syncId) {
         console.error("Error: ACTUAL_SERVER_URL, ACTUAL_PASSWORD, and ACTUAL_SYNC_ID environment variables are required.");
         process.exit(1);

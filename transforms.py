@@ -104,6 +104,11 @@ def build_net_worth_series(df_all: pd.DataFrame, current_balance: float) -> pd.D
     if df_all.empty:
         return pd.DataFrame()
 
+    # Guard: If data exists but current balance is 0.0, we likely have all accounts 
+    # excluded. Return empty to avoid a misleading negative wealth trend. (P2-P)
+    if current_balance == 0.0:
+        return pd.DataFrame()
+
     # Sort by date for cumulative sum
     df_sorted = df_all.sort_values("date")
 
