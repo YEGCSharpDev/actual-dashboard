@@ -104,46 +104,43 @@ def fetch_all_dashboard_data() -> dict:
             try:
                 # Use Popen + communicate for safe large payload handling (P2-D)
                 process = subprocess.Popen(
-                args,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            try:
-                stdout, stderr = process.communicate(timeout=300)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.communicate()
-                return {"error": "Sidecar timed out — check server connectivity", "transactions": pd.DataFrame()}
+                    args,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                try:
+                    stdout, stderr = process.communicate(timeout=300)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.communicate()
+                    return {"error": "Sidecar timed out — check server connectivity", 
+                            "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
 
-            if process.returncode != 0:
-                return {"error": f"Sidecar failed: {stderr}", "transactions": pd.DataFrame()}
-            
-            # Extract JSON between markers
-            output = stdout
-            start_marker = "__ACTUAL_JSON_START__"
-            end_marker = "__ACTUAL_JSON_END__"
-            
-            if start_marker not in output or end_marker not in output:
-                raise RuntimeError(f"Malformed output from sidecar: {output}")
-            
-            raw_json = output.split(start_marker)[1].split(end_marker)[0].strip()
-            res = json.loads(raw_json)
-            
-            # Post-process transactions into DataFrame (P2-10)
-            res["transactions"] = normalize_transactions(res.get("transactions", []))
-            res["error"] = None
-            return res
-            
-        except subprocess.TimeoutExpired:
-            return {"error": "Sidecar timed out — check server connectivity", "transactions": pd.DataFrame()}
-        except subprocess.CalledProcessError as e:
-            err_msg = e.stderr or ""
-            return {"error": f"Sidecar failed: {err_msg}", "transactions": pd.DataFrame()}
-        except Exception as e:
-            return {"error": str(e), "transactions": pd.DataFrame()}
+                if process.returncode != 0:
+                    return {"error": f"Sidecar failed: {stderr}", 
+                            "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
+                
+                # Extract JSON between markers
+                output = stdout
+                start_marker = "__ACTUAL_JSON_START__"
+                end_marker = "__ACTUAL_JSON_END__"
+                
+                if start_marker not in output or end_marker not in output:
+                    raise RuntimeError(f"Malformed output from sidecar: {output}")
+                
+                raw_json = output.split(start_marker)[1].split(end_marker)[0].strip()
+                res = json.loads(raw_json)
+                
+                # Post-process transactions into DataFrame (P2-10)
+                res["transactions"] = normalize_transactions(res.get("transactions", []))
+                res["error"] = None
+                return res
+            except Exception as e:
+                return {"error": str(e), 
+                        "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
 
 
 # --- SQLite Helpers ---
