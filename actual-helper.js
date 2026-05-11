@@ -49,15 +49,14 @@ async function main() {
             budgets: {}, // month_str -> category_data
         };
 
-        // Fetch Accounts and enrich with their current balance
+        // Fetch Accounts and enrich with their current balance in parallel (P2-A)
         const rawAccounts = await api.getAccounts();
-        for (const acc of rawAccounts) {
+        results.accounts = await Promise.all(rawAccounts.map(async (acc) => {
             if (!acc.closed) {
-                // Fetch balance explicitly as getAccounts() might return null for off-budget accounts
                 acc.balance_current = await api.getAccountBalance(acc.id);
             }
-            results.accounts.push(acc);
-        }
+            return acc;
+        }));
 
         // Fetch Categories with goal metadata
         results.categories = await api.runQuery(
@@ -81,7 +80,7 @@ async function main() {
                 ])
         ).then(res => res.data);
 
-        // 4. Fetch Budgets for the entire transaction range
+        // 4. Fetch Budgets for the entire transaction range (Correctness Fix: P1-2)
         const budgetMonths = new Set();
         results.transactions.forEach(t => {
             if (t.date) budgetMonths.add(t.date.substring(0, 7));
@@ -93,9 +92,10 @@ async function main() {
             budgetMonths.add(date.toISOString().substring(0, 7));
         }
 
-        for (const month of budgetMonths) {
+        // Parallelize budget fetching (P2-B)
+        await Promise.all(Array.from(budgetMonths).map(async (month) => {
             results.budgets[month] = await api.getBudgetMonth(month);
-        }
+        }));
 
         // 5. Output Results with markers to separate from library logs
         process.stdout.write("\n__ACTUAL_JSON_START__\n");

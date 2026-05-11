@@ -69,24 +69,28 @@ def fetch_all_dashboard_data() -> dict:
     data_dir = os.path.join(os.getcwd(), ".actual-data")
     os.makedirs(data_dir, exist_ok=True)
     
-    args = [
-        "node", "actual-helper.js",
-        "--server-url", st.secrets["ACTUAL_SERVER_URL"],
-        "--password", st.secrets["ACTUAL_PASSWORD"],
-        "--sync-id", st.secrets["ACTUAL_SYNC_ID"],
-        "--data-dir", data_dir
-    ]
+    # Pass configuration and secrets via env vars (P0-2, P0-A)
+    env = os.environ.copy()
+    env["ACTUAL_SERVER_URL"] = st.secrets["ACTUAL_SERVER_URL"]
+    env["ACTUAL_PASSWORD"] = st.secrets["ACTUAL_PASSWORD"]
+    env["ACTUAL_SYNC_ID"] = st.secrets["ACTUAL_SYNC_ID"]
+    env["ACTUAL_DATA_DIR"] = data_dir
     
     if "ACTUAL_ENCRYPTION_PASSWORD" in st.secrets:
-        args.extend(["--encryption-password", st.secrets["ACTUAL_ENCRYPTION_PASSWORD"]])
+        env["ACTUAL_ENCRYPTION_PASSWORD"] = st.secrets["ACTUAL_ENCRYPTION_PASSWORD"]
+
+    # Sidecar invoked with no secrets in argv
+    args = ["node", "actual-helper.js"]
 
     with _cli_lock:
         try:
             result = subprocess.run(
                 args,
+                env=env,
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                timeout=300 # P0-B: generous timeout
             )
             
             # Extract JSON between markers
@@ -105,6 +109,8 @@ def fetch_all_dashboard_data() -> dict:
             res["error"] = None
             return res
             
+        except subprocess.TimeoutExpired:
+            return {"error": "Sidecar timed out — check server connectivity", "transactions": pd.DataFrame()}
         except subprocess.CalledProcessError as e:
             err_msg = e.stderr or ""
             return {"error": f"Sidecar failed: {err_msg}", "transactions": pd.DataFrame()}
@@ -112,7 +118,7 @@ def fetch_all_dashboard_data() -> dict:
             return {"error": str(e), "transactions": pd.DataFrame()}
 
 
-# --- SQLite Helpers (for precise analytical queries) ---
+# --- SQLite Helpers ---
 
 def query_local_db(query: str, params: tuple = ()) -> list:
     """
@@ -122,7 +128,6 @@ def query_local_db(query: str, params: tuple = ()) -> list:
     
     if not _cached_db_path:
         data_dir = os.path.join(os.getcwd(), ".actual-data")
-        # P2-3: Find and cache the db.sqlite path
         for root, dirs, files in os.walk(data_dir):
             if "db.sqlite" in files:
                 _cached_db_path = os.path.join(root, "db.sqlite")
@@ -131,7 +136,6 @@ def query_local_db(query: str, params: tuple = ()) -> list:
     if not _cached_db_path:
         raise FileNotFoundError("Local Actual database (db.sqlite) not found. Run sync first.")
 
-    # Use a read-only connection
     conn = sqlite3.connect(f"file:{_cached_db_path}?mode=ro", uri=True)
     try:
         cursor = conn.cursor()
@@ -158,19 +162,19 @@ def get_investment_balances(all_data: dict) -> dict:
     balances = {"RESP": {}, "RRSP": {}, "TFSA": {}}
     resp_id = st.secrets["resp"]["identifier"].upper()
     rrsp_id = st.secrets["rrsp"]["identifier"].upper()
+    tfsa_id = st.secrets["tfsa"]["base"]["identifier"].upper() # P1-1: Use identifier from secrets
     
     for acc in all_data.get("accounts", []):
-        if not (acc.get("offbudget") and not acc.get("closed")):
+        if acc.get("closed"):
             continue
+            
         name = acc["name"].upper()
         acc_type = None
         if resp_id in name: acc_type = "RESP"
         elif rrsp_id in name: acc_type = "RRSP"
-        elif "TFSA" in name: acc_type = "TFSA"
+        elif tfsa_id in name or "TFSA" in name: acc_type = "TFSA"
         
         if acc_type:
-            # The API returns 'balance_current' instead of 'balance'
-            # Fallback to 0 if balance is None/null
             raw_balance = acc.get("balance_current")
             if raw_balance is None:
                 raw_balance = 0
@@ -178,7 +182,6 @@ def get_investment_balances(all_data: dict) -> dict:
     return balances
 
 
-# Redundant @st.cache_data removed per P2-2
 def fetch_underbudgeted_amounts(all_data: dict) -> tuple[dict, list, str | None]:
     """
     Calculate underfunded amounts by querying the 'zero_budgets' view in the local SQLite DB.
@@ -214,15 +217,11 @@ def fetch_underbudgeted_amounts(all_data: dict) -> tuple[dict, list, str | None]
 
 
 def get_month_budgets(all_data: dict, month_str: str) -> dict:
-    """
-    Retrieves monthly assignments using the pre-fetched API data for speed.
-    """
     if len(month_str) == 6 and month_str.isdigit():
         month_str = f"{month_str[:4]}-{month_str[4:]}"
     
     budget_data = all_data.get("budgets", {}).get(month_str, [])
     
-    # API parsing logic
     cats = []
     if isinstance(budget_data, list):
         for group in budget_data:

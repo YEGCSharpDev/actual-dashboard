@@ -127,19 +127,19 @@ def render_forecast_section(
         return
 
     st.subheader(title)
-    current_year = datetime.now().year
+    current_year_val = datetime.now().year
 
     forecast_data, total_current, total_halfway, total_final = build_forecast_data(
         account_dict,
         years_to_track,
-        current_year,
+        current_year_val,
         return_rate_fn=lambda _name: return_rate,
         contribution_fn=lambda _name, _offset: annual_contribution,
     )
 
     render_forecast_chart(
         forecast_data,
-        current_year,
+        current_year_val,
         years_to_track,
         total_current,
         total_halfway,
@@ -170,7 +170,8 @@ st.sidebar.header("Global Filters")
 # Date Range Filter
 min_date = df["date"].min().date()
 today = datetime.now().date()
-max_date = max(df["date"].max().date(), today)
+# P2-L: Use max of data directly (may be future dated)
+max_date = df["date"].max().date()
 
 # Default to current month
 start_of_month = today.replace(day=1)
@@ -344,7 +345,7 @@ with tab_overview:
     # ── Sankey Diagram ───────────────────────────────────────────────────────────
     st.subheader("Monthly Cashflow (Income & Expenses)")
 
-    if not df_income.empty or not df_expenses.empty:
+    if not df_filtered.empty: # P1-4 Consolidated guard
         inc_summary = (
             df_income.groupby("Category_Name")["amount"]
             .sum()
@@ -394,18 +395,21 @@ with tab_overview:
             )
             st.plotly_chart(fig, width="stretch")
         else:
-            st.info("No income or expense data found to chart for this month.")
+            st.info("No income or expense data found to chart for this selection.")
     else:
-        st.info("No income or expense data found to chart for this month.")
+        st.info("No transactions in the selected range.")
 
     st.markdown("---")
 
     # ── Transaction Log ──────────────────────────────────────────────────────────
     st.subheader("Transaction Log")
-    display_df = df_filtered[["date", "Payee_Name", "Category_Name", "amount"]].copy()
-    display_df = display_df.sort_values(by="date", ascending=False)
-    display_df["date"] = display_df["date"].dt.strftime("%Y-%m-%d")
-    st.dataframe(display_df, width="stretch", hide_index=True)
+    if not df_filtered.empty:
+        display_df = df_filtered[["date", "Payee_Name", "Category_Name", "amount"]].copy()
+        display_df = display_df.sort_values(by="date", ascending=False)
+        display_df["date"] = display_df["date"].dt.strftime("%Y-%m-%d")
+        st.dataframe(display_df, width="stretch", hide_index=True)
+    else:
+        st.info("No transactions to display.")
 
 with tab_net_worth:
     st.subheader("Historical Net Worth")
@@ -415,18 +419,18 @@ with tab_net_worth:
     df_nw = build_net_worth_series(all_data["transactions"], current_assets)
 
     if not df_nw.empty:
-
         # Display current net worth
         current_nw = df_nw.iloc[-1]["net_worth"]
         prev_nw = df_nw.iloc[-2]["net_worth"] if len(df_nw) > 1 else current_nw
         nw_delta = round(current_nw - prev_nw, 2)
         
+        # Pass numeric delta to st.metric for robust formatting
         st.metric(
             "Current Net Worth", 
             f"${current_nw:,.2f}", 
             delta=nw_delta,
             delta_color="normal",
-            help="Change vs previous month-end balance."
+            help="Change vs previous month-end balance. (P2-6)"
         )
 
         # Net Worth Line Chart
@@ -533,7 +537,6 @@ with tab_investments:
     st.header("Investment Forecasts")
 
     balances = get_investment_balances(all_data)
-    current_year = datetime.now().year
 
     tab_resp, tab_rrsp, tab_tfsa = st.tabs(["RESP", "RRSP", "TFSA"])
 
@@ -624,14 +627,14 @@ with tab_investments:
             forecast_data, total_current, total_halfway, total_final = build_forecast_data(
                 tfsa_balances,
                 years_to_track,
-                current_year,
+                current_year_val,
                 return_rate_fn=_tfsa_return_rate,
                 contribution_fn=_tfsa_contribution,
             )
 
             render_forecast_chart(
                 forecast_data,
-                current_year,
+                current_year_val,
                 years_to_track,
                 total_current,
                 total_halfway,
@@ -645,19 +648,22 @@ with tab_advanced:
     
     # 1. Hierarchical Spending Breakdown
     st.markdown("### Hierarchical Spending Breakdown")
-    df_expenses_only = df_filtered[~df_filtered["is_income"].eq(True)].copy()
-    if not df_expenses_only.empty:
-        fig_tree = px.treemap(
-            df_expenses_only,
-            path=["Group_Name", "Category_Name"],
-            values="amount",
-            color="amount",
-            color_continuous_scale="RdBu_r",
-            title="Spending by Group & Category"
-        )
-        st.plotly_chart(fig_tree, width="stretch")
+    if not df_filtered.empty:
+        df_expenses_only = df_filtered[~df_filtered["is_income"].eq(True)].copy()
+        if not df_expenses_only.empty:
+            fig_tree = px.treemap(
+                df_expenses_only,
+                path=["Group_Name", "Category_Name"],
+                values="amount",
+                color="amount",
+                color_continuous_scale="RdBu_r",
+                title="Spending by Group & Category"
+            )
+            st.plotly_chart(fig_tree, width="stretch")
+        else:
+            st.info("No expense data available for the current filters.")
     else:
-        st.info("No expense data available for the current filters.")
+        st.info("No data selected.")
 
     st.markdown("---")
 
@@ -691,7 +697,7 @@ with tab_advanced:
             st.metric(
                 "Month-over-Month (MTD)", 
                 f"${mom_metrics['current_mtd']:,.2f}", 
-                delta=mom_metrics['pct_change'], # P2-8: Numeric delta
+                delta=mom_metrics['pct_change'],
                 delta_color="inverse",
                 help="Normalized for partial month comparison."
             )
@@ -699,7 +705,7 @@ with tab_advanced:
             st.metric(
                 "Year-over-Year (MTD)", 
                 f"${yoy_metrics['current_mtd']:,.2f}", 
-                delta=yoy_metrics['pct_change'], # P2-8: Numeric delta
+                delta=yoy_metrics['pct_change'],
                 delta_color="inverse",
                 help="Normalized for partial month comparison."
             )
@@ -719,21 +725,30 @@ with tab_advanced:
     st.markdown("### Budget Pacing")
     tracked_categories = st.secrets["categories"].get("budget_tracking", [])
     if tracked_categories:
+        # P1-3 Fix: Use only the month data for pacing, ignoring global range filters
         real_today = datetime.now()
         pacing_date = min(real_today, current_date_ref)
         
-        _, last_day = cal_lib.monthrange(pacing_date.year, pacing_date.month)
+        import calendar as cal_lib_inline
+        _, last_day = cal_lib_inline.monthrange(pacing_date.year, pacing_date.month)
         time_elapsed_pct = pacing_date.day / last_day
         
-        st.info(f"Reference date: **{pacing_date.strftime('%Y-%m-%d')}** ({time_elapsed_pct*100:.1f}% of month elapsed). Vertical markers show expected pacing.")
+        st.info(f"Reference date: **{pacing_date.strftime('%Y-%m-%d')}** ({time_elapsed_pct*100:.1f}% of month elapsed). (Date filter ignored for pacing logic)")
         
         # Get budgets for reference month
         db_month_str = pacing_date.strftime("%Y-%m")
         monthly_budgets = get_month_budgets(all_data, db_month_str)
+        
+        # P1-3 Fix: Filter all_data to the pacing month only for accuracy
+        df_pacing_month = df_all[
+            (df_all["date"].dt.year == pacing_date.year) & 
+            (df_all["date"].dt.month == pacing_date.month) &
+            (~df_all["is_income"].eq(True))
+        ]
 
         for cat in tracked_categories:
             budgeted = monthly_budgets.get(cat, 0.0)
-            spent = df_expenses_only[df_expenses_only["Category_Name"] == cat]["amount"].sum()
+            spent = df_pacing_month[df_pacing_month["Category_Name"] == cat]["amount"].sum()
             
             pacing = calculate_budget_pacing(spent, budgeted, pacing_date)
             

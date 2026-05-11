@@ -1,0 +1,15 @@
+.git
+.actual-data
+.npm-global
+.npm-cache
+node_modules
+venv
+.streamlit
+tests
+review.md
+review_v2.md
+*.md
+.gsd
+.planning
+.temp-cli
+__pycache__
