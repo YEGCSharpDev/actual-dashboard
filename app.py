@@ -419,7 +419,7 @@ with tab_net_worth:
         # Display current net worth
         current_nw = df_nw.iloc[-1]["net_worth"]
         prev_nw = df_nw.iloc[-2]["net_worth"] if len(df_nw) > 1 else current_nw
-        nw_delta = current_nw - prev_nw
+        nw_delta = round(current_nw - prev_nw, 2)
         
         st.metric(
             "Current Net Worth", 
