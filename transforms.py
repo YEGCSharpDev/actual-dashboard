@@ -396,7 +396,7 @@ def build_forecast_data(
                 {
                     "Year": future_year,
                     "Account": name,
-                    "Projected Balance": current_balance,
+                    "Projected Balance": round(current_balance, 2),
                     "Label": f"${current_balance:,.0f}" if is_milestone else "",
                 }
             )
@@ -404,7 +404,7 @@ def build_forecast_data(
             contrib = contribution_fn(name, year_offset)
             current_balance = (current_balance * (1 + rate)) + contrib
 
-    return forecast_data, total_current, total_halfway, total_final
+    return forecast_data, round(total_current, 2), round(total_halfway, 2), round(total_final, 2)
 
 
 # --- Sankey Diagram Data ---

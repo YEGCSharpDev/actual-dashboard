@@ -49,8 +49,15 @@ async function main() {
             budgets: {}, // month_str -> category_data
         };
 
-        // Fetch Accounts
-        results.accounts = await api.getAccounts();
+        // Fetch Accounts and enrich with their current balance
+        const rawAccounts = await api.getAccounts();
+        for (const acc of rawAccounts) {
+            if (!acc.closed) {
+                // Fetch balance explicitly as getAccounts() might return null for off-budget accounts
+                acc.balance_current = await api.getAccountBalance(acc.id);
+            }
+            results.accounts.push(acc);
+        }
 
         // Fetch Categories with goal metadata
         results.categories = await api.runQuery(
@@ -74,14 +81,12 @@ async function main() {
                 ])
         ).then(res => res.data);
 
-        // 4. Fetch Budgets for the entire transaction range (Correctness Fix: P1-2)
-        // This ensures historical month filtering in the UI shows correct budget limits.
+        // 4. Fetch Budgets for the entire transaction range
         const budgetMonths = new Set();
         results.transactions.forEach(t => {
             if (t.date) budgetMonths.add(t.date.substring(0, 7));
         });
         
-        // Also add the next two months for the "Future Envelope Health" view
         const now = new Date();
         for (let i = 0; i < 3; i++) {
             const date = new Date(now.getFullYear(), now.getMonth() + i, 1);

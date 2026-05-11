@@ -227,9 +227,9 @@ with tab_overview:
     # ── Monthly Overview ──────────────────────────────────────────────────────────
     st.subheader("Monthly Overview")
 
-    total_income = df_income["amount"].sum()
-    total_spent = df_expenses["amount"].sum()
-    net_income = total_income - total_spent
+    total_income = round(df_income["amount"].sum(), 2)
+    total_spent = round(df_expenses["amount"].sum(), 2)
+    net_income = round(total_income - total_spent, 2)
 
     col_inc, col_exp, col_net, col_forecast = st.columns(4)
 
@@ -238,18 +238,18 @@ with tab_overview:
         add_inc_str = st.text_input(
             "Forecasted Income (e.g. 500+200)", value="0", key="add_inc"
         )
-        expected_income = total_income + parse_math_input(add_inc_str)
+        expected_income = round(total_income + parse_math_input(add_inc_str), 2)
 
     with col_exp:
         st.metric("Actual Expenses", f"${total_spent:,.2f}")
         add_exp_str = st.text_input(
             "Forecasted Expense (e.g. 100+50)", value="0", key="add_exp"
         )
-        expected_expenses = total_spent + parse_math_input(add_exp_str)
+        expected_expenses = round(total_spent + parse_math_input(add_exp_str), 2)
 
     with col_net:
         if total_income > 0:
-            savings_rate = (net_income / total_income) * 100
+            savings_rate = round((net_income / total_income) * 100, 2)
             savings_delta = f"{savings_rate:.1f}% savings rate"
         else:
             savings_delta = None
@@ -261,9 +261,9 @@ with tab_overview:
         )
 
     with col_forecast:
-        forecast_net = expected_income - expected_expenses
+        forecast_net = round(expected_income - expected_expenses, 2)
         if expected_income > 0:
-            forecast_savings_rate = (forecast_net / expected_income) * 100
+            forecast_savings_rate = round((forecast_net / expected_income) * 100, 2)
             forecast_delta = f"{forecast_savings_rate:.1f}% expected savings"
         else:
             forecast_delta = None
@@ -470,16 +470,16 @@ with tab_investments:
     df_tfsa = df_ytd_expenses[df_ytd_expenses["Category_Name"].isin(tfsa_cats)].copy()
 
     if not df_tfsa.empty:
-        tfsa_total = df_tfsa["amount"].sum()
+        tfsa_total = round(df_tfsa["amount"].sum(), 2)
 
         cat_totals = {
-            cat: df_tfsa[df_tfsa["Category_Name"] == cat]["amount"].sum()
+            cat: round(df_tfsa[df_tfsa["Category_Name"] == cat]["amount"].sum(), 2)
             for cat in tfsa_cats
         }
 
         TFSA_LIMIT = float(st.secrets["tfsa"]["ytd_limit"])
         progress_pct = min(tfsa_total / TFSA_LIMIT, 1.0)
-        remaining = max(TFSA_LIMIT - tfsa_total, 0.0)
+        remaining = round(max(TFSA_LIMIT - tfsa_total, 0.0), 2)
 
         cols = st.columns(len(tfsa_cats) + 1)
         for i, (cat, total) in enumerate(cat_totals.items()):
@@ -500,7 +500,8 @@ with tab_investments:
             df_tfsa.groupby(["date", "Category_Name"])["amount"].sum().reset_index()
         )
         daily_tfsa = daily_tfsa.sort_values("date")
-        daily_tfsa["Cumulative"] = daily_tfsa.groupby("Category_Name")["amount"].cumsum()
+        daily_tfsa["Cumulative"] = daily_tfsa.groupby("Category_Name")["amount"].cumsum().round(2)
+        daily_tfsa["amount"] = daily_tfsa["amount"].round(2)
 
         area_chart = (
             alt.Chart(daily_tfsa)
