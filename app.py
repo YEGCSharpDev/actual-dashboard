@@ -69,7 +69,7 @@ CURRENT_YEAR = datetime.now().year
 # --- Shared Chart Renderers ---
 def render_forecast_chart(
     forecast_data: list,
-    CURRENT_YEAR: int,
+    current_year: int,
     years_to_track: int,
     total_current: float,
     total_halfway: float,
@@ -80,11 +80,11 @@ def render_forecast_chart(
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("Current Total", f"${total_current:,.2f}")
     mc2.metric(
-        f"Halfway Projection ({CURRENT_YEAR + halfway_offset})",
+        f"Halfway Projection ({current_year + halfway_offset})",
         f"${total_halfway:,.0f}",
     )
     mc3.metric(
-        f"Final Projection ({CURRENT_YEAR + years_to_track})",
+        f"Final Projection ({current_year + years_to_track})",
         f"${total_final:,.0f}",
     )
 
@@ -173,14 +173,16 @@ st.sidebar.header("Global Filters")
 # Date Range Filter
 min_date = df["date"].min().date()
 today = datetime.now().date()
-# P2-L: Use max of data directly (may be future dated)
-max_date = df["date"].max().date()
+data_max = df["date"].max().date()
 
-# Default to current month
-start_of_month = today.replace(day=1)
+# P0-Y Fix: ensure today is selectable while tolerating future transactions
+max_date = max(data_max, today)
+default_end = min(today, max_date)
+default_start = min(today.replace(day=1), default_end)
+
 date_range = st.sidebar.date_input(
     "Date Range",
-    value=(start_of_month, today),
+    value=(default_start, default_end),
     min_value=min_date,
     max_value=max_date,
 )
