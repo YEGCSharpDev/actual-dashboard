@@ -79,6 +79,10 @@ def fetch_all_dashboard_data() -> dict:
     data_dir = os.path.join(os.getcwd(), ".actual-data")
     os.makedirs(data_dir, exist_ok=True)
     
+    # P2-O: File-based locking to prevent multi-process races on .actual-data
+    import fcntl
+    lock_path = os.path.join(data_dir, ".lock")
+    
     # Pass configuration and secrets via env vars (P0-2, P0-A)
     env = os.environ.copy()
     env["ACTUAL_SERVER_URL"] = st.secrets["ACTUAL_SERVER_URL"]
