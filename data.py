@@ -11,6 +11,11 @@ import threading
 from datetime import datetime
 from typing import TypedDict, List, Dict, Any, Optional
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
 import pandas as pd
 import streamlit as st
 from dateutil.relativedelta import relativedelta
@@ -80,7 +85,6 @@ def fetch_all_dashboard_data() -> dict:
     os.makedirs(data_dir, exist_ok=True)
     
     # P2-O: File-based locking to prevent multi-process races on .actual-data
-    import fcntl
     lock_path = os.path.join(data_dir, ".lock")
     
     # Pass configuration and secrets via env vars (P0-2, P0-A)
@@ -97,54 +101,64 @@ def fetch_all_dashboard_data() -> dict:
     args = ["node", "actual-helper.js"]
 
     with _cli_lock:
-        with open(lock_path, "w") as lock_file:
-            try:
-                # Exclusive non-blocking lock
-                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return {"error": "Another process is currently syncing. Please wait.", 
-                        "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
-
-            try:
-                # Use Popen + communicate for safe large payload handling (P2-D)
-                process = subprocess.Popen(
-                    args,
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                
+        if fcntl:
+            with open(lock_path, "w") as lock_file:
                 try:
-                    stdout, stderr = process.communicate(timeout=300)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.communicate()
-                    return {"error": "Sidecar timed out — check server connectivity", 
+                    # Exclusive non-blocking lock
+                    fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return {"error": "Another process is currently syncing. Please wait.", 
                             "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
 
-                if process.returncode != 0:
-                    return {"error": f"Sidecar failed: {stderr}", 
-                            "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
-                
-                # Extract JSON between markers
-                output = stdout
-                start_marker = "__ACTUAL_JSON_START__"
-                end_marker = "__ACTUAL_JSON_END__"
-                
-                if start_marker not in output or end_marker not in output:
-                    raise RuntimeError(f"Malformed output from sidecar: {output}")
-                
-                raw_json = output.split(start_marker)[1].split(end_marker)[0].strip()
-                res = json.loads(raw_json)
-                
-                # Post-process transactions into DataFrame (P2-10)
-                res["transactions"] = normalize_transactions(res.get("transactions", []))
-                res["error"] = None
-                return res
-            except Exception as e:
-                return {"error": str(e), 
-                        "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
+                return _invoke_sidecar(args, env)
+        else:
+            # Fallback for non-Unix (P1-B)
+            st.warning("File locking not supported on this platform. Concurrent syncs may be unsafe.")
+            return _invoke_sidecar(args, env)
+
+
+def _invoke_sidecar(args, env) -> DashboardData:
+    """Internal helper to execute the Node.js sidecar."""
+    try:
+        # Use Popen + communicate for safe large payload handling (P2-D)
+        process = subprocess.Popen(
+            args,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        try:
+            stdout, stderr = process.communicate(timeout=300)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            return {"error": "Sidecar timed out — check server connectivity", 
+                    "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
+
+        if process.returncode != 0:
+            return {"error": f"Sidecar failed: {stderr}", 
+                    "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
+        
+        # Extract JSON between markers
+        output = stdout
+        start_marker = "__ACTUAL_JSON_START__"
+        end_marker = "__ACTUAL_JSON_END__"
+        
+        if start_marker not in output or end_marker not in output:
+            raise RuntimeError(f"Malformed output from sidecar: {output}")
+        
+        raw_json = output.split(start_marker)[1].split(end_marker)[0].strip()
+        res = json.loads(raw_json)
+        
+        # Post-process transactions into DataFrame (P2-10)
+        res["transactions"] = normalize_transactions(res.get("transactions", []))
+        res["error"] = None
+        return res
+    except Exception as e:
+        return {"error": str(e), 
+                "accounts": [], "categories": [], "transactions": pd.DataFrame(), "budgets": {}}
 
 
 # --- SQLite Helpers ---

@@ -71,12 +71,13 @@ async function main() {
         };
 
         // Fetch Accounts and enrich with their current balance in parallel (P2-A)
+        // 4.1 Fix: use object spread to avoid input mutation (P2-U)
         const rawAccounts = await api.getAccounts();
         results.accounts = await Promise.all(rawAccounts.map(async (acc) => {
-            if (!acc.closed) {
-                acc.balance_current = await api.getAccountBalance(acc.id);
-            }
-            return acc;
+            return { 
+                ...acc, 
+                balance_current: acc.closed ? null : await api.getAccountBalance(acc.id) 
+            };
         }));
 
         // Fetch Categories with goal metadata

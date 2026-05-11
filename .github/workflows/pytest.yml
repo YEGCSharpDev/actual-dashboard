@@ -47,3 +47,4 @@ jobs:
         run: |
           PYTHONPATH=. pytest tests/
           node actual-helper.js --test-connection
+          node actual-helper.js --smoke-init
