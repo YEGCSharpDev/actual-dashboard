@@ -18,10 +18,18 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
           
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
+          npm ci
           
       - name: Run tests
         run: |
           PYTHONPATH=. pytest tests/
+          node actual-helper.js --test-connection

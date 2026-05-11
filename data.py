@@ -84,17 +84,27 @@ def fetch_all_dashboard_data() -> dict:
 
     with _cli_lock:
         try:
-            result = subprocess.run(
+            # Use Popen + communicate for safe large payload handling (P2-D)
+            process = subprocess.Popen(
                 args,
                 env=env,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=300 # P0-B: generous timeout
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
             )
             
+            try:
+                stdout, stderr = process.communicate(timeout=300)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+                return {"error": "Sidecar timed out — check server connectivity", "transactions": pd.DataFrame()}
+
+            if process.returncode != 0:
+                return {"error": f"Sidecar failed: {stderr}", "transactions": pd.DataFrame()}
+            
             # Extract JSON between markers
-            output = result.stdout
+            output = stdout
             start_marker = "__ACTUAL_JSON_START__"
             end_marker = "__ACTUAL_JSON_END__"
             

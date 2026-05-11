@@ -5,8 +5,21 @@ from transforms import (
     calculate_mtd_normalized_total,
     calculate_mom_metrics,
     calculate_yoy_metrics,
-    calculate_budget_pacing
+    calculate_budget_pacing,
+    split_income_expenses
 )
+
+def test_split_income_returns_positive_amounts():
+    df = pd.DataFrame({
+        "is_income": [True, False, True, False],
+        "amount":   [-200, 100, -300, 50],  # negative = income in our invariant
+    })
+    inc, exp = split_income_expenses(df)
+    # Both should be positive for UI
+    assert (inc["amount"] > 0).all()
+    assert (exp["amount"] > 0).all()
+    assert inc["amount"].sum() == 500
+    assert exp["amount"].sum() == 150
 
 def test_mtd_normalized_total():
     data = {
