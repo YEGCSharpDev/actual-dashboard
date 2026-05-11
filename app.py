@@ -729,8 +729,7 @@ with tab_advanced:
         real_today = datetime.now()
         pacing_date = min(real_today, current_date_ref)
         
-        import calendar as cal_lib_inline
-        _, last_day = cal_lib_inline.monthrange(pacing_date.year, pacing_date.month)
+        _, last_day = cal_lib.monthrange(pacing_date.year, pacing_date.month)
         time_elapsed_pct = pacing_date.day / last_day
         
         st.info(f"Reference date: **{pacing_date.strftime('%Y-%m-%d')}** ({time_elapsed_pct*100:.1f}% of month elapsed). (Date filter ignored for pacing logic)")
@@ -799,5 +798,8 @@ with tab_advanced:
                 st.metric("Retirement Goal", "Reached!", delta="Goal achieved")
             else:
                 st.metric("Retirement Goal", "Never", delta="Increase savings!")
+
+        st.caption(f"Calculations start from your current net worth of ${current_assets:,.2f}")
+"Never", delta="Increase savings!")
 
         st.caption(f"Calculations start from your current net worth of ${current_assets:,.2f}")

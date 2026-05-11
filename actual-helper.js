@@ -81,21 +81,28 @@ async function main() {
         ).then(res => res.data);
 
         // 4. Fetch Budgets for the entire transaction range (Correctness Fix: P1-2)
-        const budgetMonths = new Set();
-        results.transactions.forEach(t => {
-            if (t.date) budgetMonths.add(t.date.substring(0, 7));
-        });
+        const budgetMonths = Array.from(new Set(
+            results.transactions
+                .filter(t => t.date)
+                .map(t => t.date.substring(0, 7))
+        ));
         
         const now = new Date();
         for (let i = 0; i < 3; i++) {
             const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
-            budgetMonths.add(date.toISOString().substring(0, 7));
+            const m = date.toISOString().substring(0, 7);
+            if (!budgetMonths.includes(m)) budgetMonths.push(m);
         }
 
-        // Parallelize budget fetching (P2-B)
-        await Promise.all(Array.from(budgetMonths).map(async (month) => {
-            results.budgets[month] = await api.getBudgetMonth(month);
-        }));
+        // Parallelize budget fetching with a small concurrency limit (P2-B, 4.2)
+        // Using a simple chunk-based approach to prevent thundering herd
+        const CHUNK_SIZE = 10;
+        for (let i = 0; i < budgetMonths.length; i += CHUNK_SIZE) {
+            const chunk = budgetMonths.slice(i, i + CHUNK_SIZE);
+            await Promise.all(chunk.map(async (month) => {
+                results.budgets[month] = await api.getBudgetMonth(month);
+            }));
+        }
 
         // 5. Output Results with markers to separate from library logs
         process.stdout.write("\n__ACTUAL_JSON_START__\n");

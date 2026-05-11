@@ -5,7 +5,6 @@ RUN apt-get update && apt-get install -y \
     curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
-    && npm install -g @actual-app/cli @actual-app/api \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -16,10 +15,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application and sidecar code
-COPY app.py data.py transforms.py actual-helper.js package.json .
+COPY app.py data.py transforms.py actual-helper.js package.json package-lock.json .
 
-# Install sidecar dependencies
-RUN npm install
+# Install sidecar dependencies (P0-Z: use npm ci for immutable builds)
+RUN npm ci
 
 # Expose the default Streamlit port
 EXPOSE 8501

@@ -172,7 +172,7 @@ def get_investment_balances(all_data: dict) -> dict:
         acc_type = None
         if resp_id in name: acc_type = "RESP"
         elif rrsp_id in name: acc_type = "RRSP"
-        elif tfsa_id in name or "TFSA" in name: acc_type = "TFSA"
+        elif tfsa_id in name: acc_type = "TFSA"
         
         if acc_type:
             raw_balance = acc.get("balance_current")
