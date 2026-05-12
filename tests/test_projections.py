@@ -6,20 +6,24 @@ def test_milestone_months_linear():
     # Needs $100 more, so 10 months
     assert calculate_milestone_months(100, 10, 200, 0) == 10
 
+
 def test_milestone_months_already_reached():
     assert calculate_milestone_months(500, 10, 200, 0.05) == 0
+
 
 def test_milestone_months_growth():
     # $10,000 starting, $1,000/mo savings, $25,000 target, 10% annual return
     # Monthly rate = 0.833%
-    # Using online calculator for verification: n=13 gives ~$24,822, so n=14 is needed to reach $25k.
+    # Using online calculator: n=13 gives ~$24,822, so n=14 to reach $25k.
     assert calculate_milestone_months(10000, 1000, 25000, 0.10) == 14
+
 
 def test_milestone_never_reach():
     # Starting 0, saving 0, target 100, no return
     assert calculate_milestone_months(0, 0, 100, 0) == 9999
     # Starting 100, saving -10 (loss), target 200, no return
     assert calculate_milestone_months(100, -10, 200, 0) == 9999
+
 
 def test_milestone_growth_only():
     # Starting 100, saving 0, target 121, 10% return (monthly compound)
