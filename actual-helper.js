@@ -3,6 +3,9 @@
  * 
  * Fetches all necessary dashboard data in a single session to avoid rate limiting.
  */
+// P0-Node-Fix: Mock browser global 'navigator' required by some versions of the Actual API
+global.navigator = { platform: 'node' };
+
 const api = require('@actual-app/api');
 const path = require('path');
 const fs = require('fs');
