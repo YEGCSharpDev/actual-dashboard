@@ -1,6 +1,6 @@
 # Actual CLI Docker Examples
 
-## Same Command : List Accounts
+## Sample Command : List Accounts
 ```bash
 docker run -it --rm \
   -e ACTUAL_SERVER_URL=$ACTUAL_SERVER_URL \
