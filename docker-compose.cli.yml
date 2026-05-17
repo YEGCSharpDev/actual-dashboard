@@ -1,0 +1,19 @@
+services:
+  actual-cli:
+    image: preface8675/actual-cli:latest
+    # Or build it locally:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.cli
+    volumes:
+      - ./actual-data:/app/.actual-data
+    environment:
+      - ACTUAL_SERVER_URL=${ACTUAL_SERVER_URL}
+      - ACTUAL_PASSWORD=${ACTUAL_PASSWORD}
+      - ACTUAL_SYNC_ID=${ACTUAL_SYNC_ID}
+      # - ACTUAL_ENCRYPTION_PASSWORD=${ACTUAL_ENCRYPTION_PASSWORD}
+    # To run a specific command, you can override the command:
+    # command: ["accounts", "list"]
+    # For interactive use:
+    stdin_open: true
+    tty: true
