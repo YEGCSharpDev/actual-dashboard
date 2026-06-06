@@ -5,6 +5,7 @@ FROM node:20-alpine AS builder
 
 # Install build dependencies for native C++ modules (like better-sqlite3 and sqlite3)
 RUN apk add --no-cache python3 make g++
+ENV PYTHON=/usr/bin/python3
 
 WORKDIR /app
 
