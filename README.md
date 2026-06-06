@@ -44,9 +44,10 @@ ACTUAL_SYNC_ID="your-budget-sync-id"
 ACTUAL_ENCRYPTION_PASSWORD="your-optional-encryption-password" # if E2E is enabled
 ACTUAL_DATA_DIR="./.actual-data"
 
+# EVERYTHING BELOW THIS LINE IS OPTIONAL
 # Categories to Monitor (JSON String Arrays)
-ACTUAL_TFSA_TRACKING='["⛱️ATB TFSA", "⛱️Wealthsimple TFSA"]'
-ACTUAL_BUDGET_TRACKING='["Groceries", "Rent", "Utilities", "Petrol"]'
+ACTUAL_TFSA_TRACKING=["⛱️ATB TFSA", "⛱️Wealthsimple TFSA"]
+ACTUAL_BUDGET_TRACKING=["Groceries", "Rent", "Utilities", "Petrol"]
 
 # RESP Forecast Settings
 ACTUAL_RESP_IDENTIFIER="RESP"
