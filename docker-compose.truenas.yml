@@ -35,9 +35,9 @@ services:
       # 2. Tracking Categories (JSON string arrays)
       # Must match the category names exactly as defined in your Actual budget.
       # Specify investment accounts to track:
-      - ACTUAL_TFSA_TRACKING=["⛱️🍸ATB TFSA", "⛱️🍸Wealthsimple TFSA"]
+      - ACTUAL_TFSA_TRACKING='["⛱️🍸ATB TFSA", "⛱️🍸Wealthsimple TFSA"]'
       # Specify day-to-day budget categories to monitor:
-      - ACTUAL_BUDGET_TRACKING=["🥡 Eating Out", "🏬 Groceries", "🏢 Office Going Expenses", "⛽ Petrol"]
+      - ACTUAL_BUDGET_TRACKING='["🥡 Eating Out", "🏬 Groceries", "🏢 Office Going Expenses", "⛽ Petrol"]'
       
       # 3. RESP Forecast Settings
       # Substring to identify RESP accounts:
