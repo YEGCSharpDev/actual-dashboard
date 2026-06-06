@@ -1,1 +1,0 @@
-docker run -it --rm -e ACTUAL_SERVER_URL="https://actual.11799086.xyz" -e ACTUAL_PASSWORD="Onesap_1" -e ACTUAL_SYNC_ID="7e1362ad-1994-47c1-9255-1176d9c522a4"-v $(pwd):/app/.actual-data actual-cli accounts list
