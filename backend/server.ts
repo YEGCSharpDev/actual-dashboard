@@ -7,6 +7,7 @@ import fs from 'fs';
 import sqlite3 from 'sqlite3';
 // @ts-ignore
 import api from '@actual-app/api';
+import AdmZip from 'adm-zip';
 
 dotenv.config();
 
@@ -133,6 +134,94 @@ async function doSync() {
 function startPeriodicSync() {
   doSync();
   setInterval(doSync, 15 * 60 * 1000);
+}
+
+// Rotate backups: keep only the 10 most recent files
+function rotateBackups(backupDir: string) {
+  try {
+    const files = fs.readdirSync(backupDir);
+    const zipFiles = files
+      .filter(file => file.endsWith('.zip'))
+      .map(file => ({
+        name: file,
+        path: path.join(backupDir, file),
+        mtime: fs.statSync(path.join(backupDir, file)).mtime.getTime()
+      }));
+      
+    zipFiles.sort((a, b) => b.mtime - a.mtime);
+    
+    if (zipFiles.length > 10) {
+      const filesToDelete = zipFiles.slice(10);
+      for (const file of filesToDelete) {
+        fs.unlinkSync(file.path);
+        console.log(`[Backup] Deleted old backup file: ${file.name}`);
+      }
+    }
+  } catch (error) {
+    console.error('[Backup] Rotation error:', error);
+  }
+}
+
+// Perform budget backup
+export async function runBackup(): Promise<string> {
+  const dbPath = getDbPath();
+  const budgetDir = path.dirname(dbPath);
+  const backupDir = path.join(DATA_DIR, 'budget-backup');
+  
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+  
+  const now = new Date();
+  const DD = String(now.getDate()).padStart(2, '0');
+  const MM = String(now.getMonth() + 1).padStart(2, '0');
+  const YYYY = now.getFullYear();
+  const HH = String(now.getHours()).padStart(2, '0');
+  const Min = String(now.getMinutes()).padStart(2, '0');
+  const SS = String(now.getSeconds()).padStart(2, '0');
+  
+  const filename = `${DD}${MM}${YYYY}${HH}${Min}${SS}.zip`;
+  const zipPath = path.join(backupDir, filename);
+  
+  console.log(`[Backup] Starting backup to ${zipPath}...`);
+  
+  const zip = new AdmZip();
+  
+  const dbFile = path.join(budgetDir, 'db.sqlite');
+  if (fs.existsSync(dbFile)) {
+    zip.addLocalFile(dbFile);
+  } else {
+    throw new Error(`db.sqlite not found at ${dbFile}`);
+  }
+  
+  const metaFile = path.join(budgetDir, 'metadata.json');
+  if (fs.existsSync(metaFile)) {
+    zip.addLocalFile(metaFile);
+  }
+  
+  zip.writeZip(zipPath);
+  console.log(`[Backup] Backup written successfully: ${filename}`);
+  
+  rotateBackups(backupDir);
+  return filename;
+}
+
+let lastBackupDateString = '';
+
+// Start backup scheduler checking every 30 seconds
+function startBackupScheduler() {
+  setInterval(() => {
+    const now = new Date();
+    const dateString = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
+    // Check if it is 8:00 PM (20:00) and we haven't backed up today yet
+    if (now.getHours() === 20 && lastBackupDateString !== dateString) {
+      lastBackupDateString = dateString;
+      runBackup()
+        .then(filename => console.log(`[Scheduler] Automatic 8PM backup completed: ${filename}`))
+        .catch(err => console.error('[Scheduler] Automatic 8PM backup failed:', err));
+    }
+  }, 30000);
 }
 
 // Math expression evaluator (safe)
@@ -263,6 +352,54 @@ app.post('/api/evaluate', (req, res) => {
   }
   const result = parseMathInput(expr);
   res.json({ result });
+});
+
+app.post('/api/backup', async (req, res) => {
+  try {
+    const filename = await runBackup();
+    res.json({ success: true, filename });
+  } catch (err: any) {
+    console.error("Manual backup failed:", err);
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/backups', (req, res) => {
+  try {
+    const backupDir = path.join(DATA_DIR, 'budget-backup');
+    if (!fs.existsSync(backupDir)) {
+      return res.json({ backups: [] });
+    }
+    const files = fs.readdirSync(backupDir);
+    const backups = files
+      .filter(file => file.endsWith('.zip'))
+      .map(file => {
+        const filePath = path.join(backupDir, file);
+        const stat = fs.statSync(filePath);
+        return {
+          filename: file,
+          size: stat.size,
+          createdAt: stat.mtime.toISOString()
+        };
+      });
+    backups.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    res.json({ backups });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/backups/download/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const safeFilename = path.basename(filename);
+  const backupDir = path.join(DATA_DIR, 'budget-backup');
+  const filePath = path.join(backupDir, safeFilename);
+
+  if (fs.existsSync(filePath)) {
+    res.download(filePath);
+  } else {
+    res.status(404).json({ error: 'Backup file not found' });
+  }
 });
 
 // Primary Endpoint to fetch dashboard data
@@ -454,7 +591,10 @@ if (fs.existsSync(frontendDistPath)) {
   console.warn(`Static frontend build path ${frontendDistPath} not found. Running in API-only mode.`);
 }
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  startPeriodicSync();
-});
+if (process.env.BACKEND_NO_LISTEN !== 'true') {
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    startPeriodicSync();
+    startBackupScheduler();
+  });
+}
