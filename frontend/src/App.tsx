@@ -380,6 +380,7 @@ export default function App() {
     const respId = config.resp.identifier.toUpperCase();
     const rrspId = config.rrsp.identifier.toUpperCase();
     const tfsaId = config.tfsa.base.identifier.toUpperCase();
+    const tfsaCatchupId = config.tfsa.catchup.identifier.toUpperCase();
 
     accounts.forEach(acc => {
       if (acc.closed || !acc.offbudget) return;
@@ -387,7 +388,11 @@ export default function App() {
       let match = false;
       if (type === 'RESP' && name.includes(respId)) match = true;
       if (type === 'RRSP' && name.includes(rrspId)) match = true;
-      if (type === 'TFSA' && name.includes(tfsaId)) match = true;
+      if (type === 'TFSA') {
+        if (name.includes('TFSA') || name.includes(tfsaId) || name.includes(tfsaCatchupId)) {
+          match = true;
+        }
+      }
 
       if (match) {
         balances[acc.name] = (acc.balance_current || 0) / 100.0;
@@ -471,7 +476,11 @@ export default function App() {
       let currentBalance = accountDict[name];
       totalCurrent += currentBalance;
 
-      const isCatchup = name.toUpperCase().includes(catchupMatch);
+      const upperName = name.toUpperCase();
+      const catchupWords = catchupMatch.split(/\s+/).filter(w => w && w !== 'TFSA');
+      const isCatchup = upperName.includes(catchupMatch) || 
+                        upperName.includes("WEALTHSIMPLE") ||
+                        (catchupWords.length > 0 && catchupWords.every(word => upperName.includes(word)));
       const rate = isCatchup ? tfsaWsReturnPct / 100.0 : tfsaBaseReturnPct / 100.0;
 
       for (let yearOffset = 0; yearOffset <= yearsToTrack; yearOffset++) {
