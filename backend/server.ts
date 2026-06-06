@@ -1,3 +1,4 @@
+import './navigator-polyfill';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -8,18 +9,6 @@ import sqlite3 from 'sqlite3';
 import api from '@actual-app/api';
 
 dotenv.config();
-
-// P0-Node-Fix: Mock browser global 'navigator' required by some versions of the Actual API
-try {
-  Object.defineProperty(global, 'navigator', {
-    value: { platform: 'node' },
-    writable: true,
-    configurable: true
-  });
-} catch (e) {
-  // @ts-ignore
-  global.navigator = { platform: 'node' };
-}
 
 const app = express();
 app.use(cors());
