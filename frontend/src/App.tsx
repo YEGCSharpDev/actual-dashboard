@@ -25,6 +25,14 @@ ChartJS.register(
   Filler
 );
 
+// Set high-contrast global defaults for Chart.js in dark theme
+ChartJS.defaults.color = '#cbd5e1';
+ChartJS.defaults.font.family = "'Plus Jakarta Sans', -apple-system, sans-serif";
+ChartJS.defaults.plugins.legend.labels.color = '#cbd5e1';
+ChartJS.defaults.scale.ticks.color = '#cbd5e1';
+ChartJS.defaults.scale.grid.color = 'rgba(255, 255, 255, 0.05)';
+
+
 // Math expression parser
 function parseMathInput(exprStr: string): number {
   if (!exprStr || !exprStr.trim()) return 0;
@@ -699,7 +707,7 @@ export default function App() {
               plugins: {
                 legend: {
                   position: 'bottom',
-                  labels: { color: 'var(--color-text-secondary)', font: { family: 'var(--font-body)' } }
+                  labels: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
                 },
                 tooltip: {
                   callbacks: {
@@ -709,14 +717,14 @@ export default function App() {
               },
               scales: {
                 x: {
-                  grid: { color: 'rgba(255, 255, 255, 0.03)' },
-                  ticks: { color: 'var(--color-text-secondary)', font: { family: 'var(--font-body)' } }
+                  grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                  ticks: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
                 },
                 y: {
-                  grid: { color: 'rgba(255, 255, 255, 0.03)' },
+                  grid: { color: 'rgba(255, 255, 255, 0.05)' },
                   ticks: {
-                    color: 'var(--color-text-secondary)',
-                    font: { family: 'var(--font-body)' },
+                    color: '#cbd5e1',
+                    font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" },
                     callback: (val) => `$${Number(val).toLocaleString()}`
                   }
                 }
@@ -1060,7 +1068,7 @@ export default function App() {
                       plugins: {
                         legend: {
                           position: 'bottom',
-                          labels: { color: 'var(--color-text-secondary)', font: { family: 'var(--font-body)' } }
+                          labels: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
                         },
                         tooltip: {
                           callbacks: {
@@ -1070,14 +1078,14 @@ export default function App() {
                       },
                       scales: {
                         x: {
-                          grid: { color: 'rgba(255, 255, 255, 0.03)' },
-                          ticks: { color: 'var(--color-text-secondary)', font: { family: 'var(--font-body)' } }
+                          grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                          ticks: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
                         },
                         y: {
-                          grid: { color: 'rgba(255, 255, 255, 0.03)' },
+                          grid: { color: 'rgba(255, 255, 255, 0.05)' },
                           ticks: {
-                            color: 'var(--color-text-secondary)',
-                            font: { family: 'var(--font-body)' },
+                            color: '#cbd5e1',
+                            font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" },
                             callback: (val) => `$${Number(val).toLocaleString()}`
                           }
                         }

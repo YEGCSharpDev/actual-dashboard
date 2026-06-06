@@ -9,7 +9,7 @@
   --border-card: rgba(255, 255, 255, 0.06);
   --shadow-card: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   
-  --color-primary: #4f46e5; /* Indigo */
+  --color-primary: #818cf8; /* Indigo 400 for high-contrast dark theme */
   --color-success: #10b981; /* Emerald green */
   --color-success-bg: rgba(16, 185, 129, 0.12);
   --color-success-border: rgba(16, 185, 129, 0.25);
