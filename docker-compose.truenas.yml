@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  actual-dashboard:
+    image: preface8675/actual-dashboard:latest
+    container_name: actual-dashboard
+    restart: unless-stopped
+    user: "568:3002" # Run container as TrueNAS apps user/group
+    
+    ports:
+      - "8501:3000"
+      
+    volumes:
+      # TrueNAS TIP: Change `/mnt/Tank/AppData/config/Actual-Dashboard` to your actual dataset path
+      - /mnt/Tank/AppData/config/Actual-Dashboard:/app/.actual-data
+      
+    environment:
+      # User and Group permissions
+      - PUID=568
+      - PGID=3002
+      
+      # Timezone configuration
+      - TZ=America/Edmonton
+      
+      # 1. API Synchronization Credentials
+      # URL of your actual-budget server. Use the internal network address or public domain.
+      - ACTUAL_SERVER_URL=https://your-actual-server-domain.com
+      # The password for your Actual sync server
+      - ACTUAL_PASSWORD=your-sync-server-password
+      # The sync ID of your budget (Found in Actual Budget under settings -> Advanced -> Sync ID)
+      - ACTUAL_SYNC_ID=your-budget-sync-id
+      # Optional: The encryption password of your budget if you enabled end-to-end encryption
+      - ACTUAL_ENCRYPTION_PASSWORD=your-optional-encryption-password
+      
+      # 2. Tracking Categories (JSON string arrays)
+      # Must match the category names exactly as defined in your Actual budget.
+      # Specify investment accounts to track:
+      - ACTUAL_TFSA_TRACKING=["⛱️🍸ATB TFSA", "⛱️🍸Wealthsimple TFSA"]
+      # Specify day-to-day budget categories to monitor:
+      - ACTUAL_BUDGET_TRACKING=["🥡 Eating Out", "🏬 Groceries", "🏢 Office Going Expenses", "⛽ Petrol"]
+      
+      # 3. RESP Forecast Settings
+      # Substring to identify RESP accounts:
+      - ACTUAL_RESP_IDENTIFIER=RESP
+      # Investment time horizon in years:
+      - ACTUAL_RESP_HORIZON_YEARS=10
+      # Estimated annual return percentage:
+      - ACTUAL_RESP_DEFAULT_RETURN_PCT=4.0
+      # Planned monthly contributions:
+      - ACTUAL_RESP_MONTHLY_CONTRIBUTION=400.0
+      
+      # 4. RRSP Forecast Settings
+      # Substring to identify RRSP accounts:
+      - ACTUAL_RRSP_IDENTIFIER=RRSP
+      # Investment time horizon in years:
+      - ACTUAL_RRSP_HORIZON_YEARS=30
+      # Estimated annual return percentage:
+      - ACTUAL_RRSP_DEFAULT_RETURN_PCT=8.0
+      # Planned annual contributions:
+      - ACTUAL_RRSP_ANNUAL_CONTRIBUTION=5000.0
+      
+      # 5. TFSA Forecast Settings
+      # Investment time horizon in years:
+      - ACTUAL_TFSA_HORIZON_YEARS=30
+      # Your remaining room/limit for the current YTD:
+      - ACTUAL_TFSA_YTD_LIMIT=7000.0
+      # Standard annual contribution room added every year (e.g., $7000 in Canada for 2024/2025):
+      - ACTUAL_TFSA_ANNUAL_ROOM=7000.0
+      
+      # Base TFSA (e.g. ATB TFSA) settings
+      - ACTUAL_TFSA_BASE_IDENTIFIER=ATB TFSA
+      - ACTUAL_TFSA_BASE_DEFAULT_RETURN_PCT=4.0
+      - ACTUAL_TFSA_BASE_MONTHLY_CONTRIBUTION=400.0
+      
+      # Catch-up TFSA (e.g. Wealthsimple TFSA) settings
+      - ACTUAL_TFSA_CATCHUP_IDENTIFIER=WEALTHSIMPLE TFSA
+      - ACTUAL_TFSA_CATCHUP_DEFAULT_RETURN_PCT=8.0
+      - ACTUAL_TFSA_CATCHUP_YEAR_CONTRIBUTION=0.0
