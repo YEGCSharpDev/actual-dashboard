@@ -4,7 +4,7 @@
   "description": "Node.js sidecar for Actual Budget API integration",
   "main": "actual-helper.js",
   "dependencies": {
-    "@actual-app/api": "^26.5.2"
+    "@actual-app/api": "^26.6.0"
   },
   "scripts": {
     "test-connection": "node actual-helper.js --test-connection"
