@@ -13,7 +13,6 @@ COPY frontend/package*.json ./frontend/
 RUN npm install
 
 # Copy source code
-COPY tsconfig.json ./
 COPY backend ./backend
 COPY frontend ./frontend
 
