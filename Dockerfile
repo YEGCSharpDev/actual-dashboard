@@ -3,6 +3,9 @@
 # ==========================================
 FROM node:20-alpine AS builder
 
+# Install build dependencies for native C++ modules (like better-sqlite3 and sqlite3)
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
 # Copy package descriptors
@@ -19,6 +22,9 @@ COPY frontend ./frontend
 # Build both frontend and backend
 RUN npm run build
 
+# Remove development dependencies to keep final image minimal (maintaining native builds)
+RUN npm prune --omit=dev
+
 # ==========================================
 # STAGE 2: RUNNER
 # ==========================================
@@ -32,10 +38,8 @@ ENV NODE_ENV=production
 # Copy package descriptors
 COPY package*.json ./
 
-# Install only production dependencies (ignore scripts to avoid rebuilding frontend)
-RUN npm install --omit=dev --ignore-scripts
-
-# Copy compiled backend and built frontend from builder stage
+# Copy compiled backend, built frontend, and production node_modules from builder
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/frontend/dist ./frontend/dist
 
