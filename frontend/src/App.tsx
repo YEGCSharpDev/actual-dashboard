@@ -955,7 +955,7 @@ export default function App() {
 
       {/* 5. Sankey Diagram */}
       <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Cashflow</h2>
-      <div className="card" style={{ marginBottom: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div className="card" style={{ marginBottom: '2rem' }}>
         {/* Summarize categories */}
         {(() => {
           const incSummary: Record<string, number> = {};

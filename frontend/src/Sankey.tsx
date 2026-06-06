@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface SankeyData {
   Category_Name: string;
@@ -11,13 +11,38 @@ interface SankeyProps {
 }
 
 export const Sankey: React.FC<SankeyProps> = ({ income, expenses }) => {
-  const width = 900;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(900);
   const height = 600;
   const leftPadding = 150;
-  const rightPadding = 150;
+  const rightPadding = 200; // Increased to 200 to prevent label truncation
   const paddingY = 40;
   const colWidth = 20;
   const colSpacing = (width - leftPadding - rightPadding - colWidth * 4) / 3;
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    // Initial measure
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.width) {
+      setWidth(Math.max(900, rect.width));
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      if (!entries || !entries[0]) return;
+      const contentWidth = entries[0].contentRect.width;
+      if (contentWidth > 0) {
+        // Enforce a minimum width of 900px to maintain readable proportions on mobile
+        setWidth(Math.max(900, contentWidth));
+      }
+    });
+
+    observer.observe(containerRef.current);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   // Filter out zero-amount items
   const activeIncome = income.filter(x => x.amount > 0);
@@ -225,82 +250,84 @@ export const Sankey: React.FC<SankeyProps> = ({ income, expenses }) => {
   }
 
   return (
-    <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
-      <svg width={width} height={height} style={{ display: 'block', margin: '0 auto' }}>
-        {/* Draw Links first so they sit behind nodes */}
-        <g>
-          {links.map((link, idx) => (
-            <path
-              key={idx}
-              d={link.d}
-              fill="none"
-              stroke={link.color}
-              strokeWidth={link.strokeWidth}
-              style={{
-                transition: 'stroke 0.2s',
-                cursor: 'pointer',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.stroke = link.color.replace('0.25', '0.5').replace('0.2', '0.45');
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.stroke = link.color;
-              }}
-            >
-              <title>{link.tooltip}</title>
-            </path>
-          ))}
-        </g>
-
-        {/* Draw Nodes */}
-        <g>
-          {nodes.map(node => (
-            <g key={node.id}>
-              <rect
-                x={node.x}
-                y={node.y}
-                width={node.w}
-                height={node.h}
-                fill={node.color}
-                rx={2}
-                style={{ cursor: 'pointer' }}
-              >
-                <title>{`${node.label}: $${node.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</title>
-              </rect>
-              {/* Node Labels */}
-              <text
-                x={node.x + (node.x > width / 2 ? node.w + 6 : -6)}
-                y={node.y + node.h / 2}
-                fill="var(--color-text-primary)"
-                fontSize="11px"
-                fontWeight="600"
-                textAnchor={node.x > width / 2 ? 'start' : 'end'}
-                dominantBaseline="central"
+    <div ref={containerRef} style={{ width: '100%' }}>
+      <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
+        <svg width={width} height={height} style={{ display: 'block', margin: '0 auto' }}>
+          {/* Draw Links first so they sit behind nodes */}
+          <g>
+            {links.map((link, idx) => (
+              <path
+                key={idx}
+                d={link.d}
+                fill="none"
+                stroke={link.color}
+                strokeWidth={link.strokeWidth}
                 style={{
-                  pointerEvents: 'none',
-                  textShadow: '0 1px 3px rgba(0,0,0,0.8)'
+                  transition: 'stroke 0.2s',
+                  cursor: 'pointer',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.stroke = link.color.replace('0.25', '0.5').replace('0.2', '0.45');
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.stroke = link.color;
                 }}
               >
-                {node.label}
-              </text>
-              {/* Values below/above labels for larger nodes */}
-              {node.h > 12 && (
+                <title>{link.tooltip}</title>
+              </path>
+            ))}
+          </g>
+
+          {/* Draw Nodes */}
+          <g>
+            {nodes.map(node => (
+              <g key={node.id}>
+                <rect
+                  x={node.x}
+                  y={node.y}
+                  width={node.w}
+                  height={node.h}
+                  fill={node.color}
+                  rx={2}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <title>{`${node.label}: $${node.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</title>
+                </rect>
+                {/* Node Labels */}
                 <text
                   x={node.x + (node.x > width / 2 ? node.w + 6 : -6)}
-                  y={node.y + node.h / 2 + 12}
-                  fill="var(--color-text-secondary)"
-                  fontSize="10px"
+                  y={node.y + node.h / 2}
+                  fill="var(--color-text-primary)"
+                  fontSize="11px"
+                  fontWeight="600"
                   textAnchor={node.x > width / 2 ? 'start' : 'end'}
                   dominantBaseline="central"
-                  style={{ pointerEvents: 'none' }}
+                  style={{
+                    pointerEvents: 'none',
+                    textShadow: '0 1px 3px rgba(0,0,0,0.8)'
+                  }}
                 >
-                  ${Math.round(node.amount).toLocaleString()}
+                  {node.label}
                 </text>
-              )}
-            </g>
-          ))}
-        </g>
-      </svg>
+                {/* Values below/above labels for larger nodes */}
+                {node.h > 12 && (
+                  <text
+                    x={node.x + (node.x > width / 2 ? node.w + 6 : -6)}
+                    y={node.y + node.h / 2 + 12}
+                    fill="var(--color-text-secondary)"
+                    fontSize="10px"
+                    textAnchor={node.x > width / 2 ? 'start' : 'end'}
+                    dominantBaseline="central"
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    ${Math.round(node.amount).toLocaleString()}
+                  </text>
+                )}
+              </g>
+            ))}
+          </g>
+        </svg>
+      </div>
     </div>
   );
 };
