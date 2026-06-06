@@ -525,8 +525,19 @@ app.get('/api/data', async (req, res) => {
 
     // 5. Build parsed environment configs to send to frontend
     // Categories config
-    const tfsaTracking = JSON.parse(process.env.ACTUAL_TFSA_TRACKING || '[]');
-    const budgetTracking = JSON.parse(process.env.ACTUAL_BUDGET_TRACKING || '[]');
+    const parseJsonEnvArray = (val: string | undefined): string[] => {
+      if (!val) return [];
+      const clean = val.trim().replace(/^['"]|['"]$/g, '');
+      try {
+        return JSON.parse(clean);
+      } catch (err) {
+        console.error(`Failed to parse JSON env array: "${val}"`, err);
+        return [];
+      }
+    };
+
+    const tfsaTracking = parseJsonEnvArray(process.env.ACTUAL_TFSA_TRACKING);
+    const budgetTracking = parseJsonEnvArray(process.env.ACTUAL_BUDGET_TRACKING);
 
     // Investments configurations
     const respConfig = {
@@ -591,7 +602,7 @@ if (fs.existsSync(frontendDistPath)) {
   console.warn(`Static frontend build path ${frontendDistPath} not found. Running in API-only mode.`);
 }
 
-if (process.env.BACKEND_NO_LISTEN !== 'true') {
+if (process.env.BACKEND_NO_LISTEN !== 'true' && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     startPeriodicSync();
