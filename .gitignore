@@ -10,3 +10,6 @@ venv/
 node_modules/
 output.json
 test_actual_cli*.py
+.env
+dist/
+frontend/dist/

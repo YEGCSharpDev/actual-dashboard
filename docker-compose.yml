@@ -1,51 +1,9 @@
 # ==============================================================================
-# ACTUAL BUDGET STREAMLIT DASHBOARD (PARAMETERIZED)
+# ACTUAL BUDGET LEAN DASHBOARD (NODE.JS / REACT)
 # ==============================================================================
-# 
-# STEP 0: This container uses a Node.js sidecar with the official Actual API.
 #
-# STEP 1: In the mounted directory create secrets.toml file
-#
-# STEP 2: Paste the following TOML template into the file and update the 
-#         API keys/URLs. This file controls all dashboard math and logic:
-#
-# ----------- COPY BELOW THIS LINE -----------
-# ACTUAL_URL = "http://actual-REST-URI/v1/budgets/YOUR_BUDGET_ID"
-# ACTUAL_API_KEY = "API_KEY"
-#
-# [categories]
-# tfsa_tracking = ["⛱️🍸ATB TFSA", "⛱️🍸Wealthsimple TFSA"]
-# Add this new array in the exact order you want them to appear on the dashboard:
-# budget_tracking = ["🥡 Eating Out", "🏬 Groceries", "🏢 Office Going Expenses", "⛽ Petrol"]
-#
-# [resp]
-# identifier = "RESP"
-# horizon_years = 10
-# default_return_pct = 4.0
-# monthly_contribution = xxx.0
-#
-# [rrsp]
-# identifier = "RRSP"
-# horizon_years = 30
-# default_return_pct = 8.0
-# annual_contribution = xxx.0
-#
-# [tfsa]
-# horizon_years = 30
-# ytd_limit = 7000.0
-# annual_room = 7000.0
-#
-# [tfsa.base]
-# identifier = "xxxx"
-# default_return_pct = 4.0
-# monthly_contribution = 400.0
-#
-# [tfsa.catchup]
-# identifier = "xxxx"
-# default_return_pct = 8.0
-# catchup_year_contribution = 0.0
-# ----------- COPY ABOVE THIS LINE -----------
-#
+# Set up your environment variables below to configure the dashboard logic.
+# All investment projection settings and budget category lists are controlled here.
 #
 # ==============================================================================
 
@@ -53,16 +11,49 @@ version: '3.8'
 
 services:
   actual-dashboard:
-    image: preface8675/actual-dashboard:1.0.0
-  
+    build: .
     container_name: actual-dashboard
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8501:3000" # Map existing external port 8501 to internal node port 3000
     volumes:
-      - /mnt/Tank/AppData/config/Actual-Dashboard:/app/.streamlit:ro
-      - /mnt/Tank/AppData/config/Actual-Dashboard/data:/app/.actual-data
+      - ./actual-data:/app/.actual-data
     environment:
-      - PUID=568
-      - PGID=3002
       - TZ=America/Edmonton
+      
+      # 1. API Synchronization Credentials
+      - ACTUAL_SERVER_URL=http://actual-sync-server:5006
+      - ACTUAL_PASSWORD=your-sync-server-password
+      - ACTUAL_SYNC_ID=your-budget-sync-id
+      - ACTUAL_ENCRYPTION_PASSWORD=your-optional-encryption-password
+      
+      # 2. Tracking Categories (JSON string arrays)
+      - ACTUAL_TFSA_TRACKING=["⛱️🍸ATB TFSA", "⛱️🍸Wealthsimple TFSA"]
+      - ACTUAL_BUDGET_TRACKING=["🥡 Eating Out", "🏬 Groceries", "🏢 Office Going Expenses", "⛽ Petrol"]
+      
+      # 3. RESP Forecast Settings
+      - ACTUAL_RESP_IDENTIFIER=RESP
+      - ACTUAL_RESP_HORIZON_YEARS=10
+      - ACTUAL_RESP_DEFAULT_RETURN_PCT=4.0
+      - ACTUAL_RESP_MONTHLY_CONTRIBUTION=400.0
+      
+      # 4. RRSP Forecast Settings
+      - ACTUAL_RRSP_IDENTIFIER=RRSP
+      - ACTUAL_RRSP_HORIZON_YEARS=30
+      - ACTUAL_RRSP_DEFAULT_RETURN_PCT=8.0
+      - ACTUAL_RRSP_ANNUAL_CONTRIBUTION=5000.0
+      
+      # 5. TFSA Forecast Settings
+      - ACTUAL_TFSA_HORIZON_YEARS=30
+      - ACTUAL_TFSA_YTD_LIMIT=7000.0
+      - ACTUAL_TFSA_ANNUAL_ROOM=7000.0
+      
+      # Base TFSA
+      - ACTUAL_TFSA_BASE_IDENTIFIER=ATB TFSA
+      - ACTUAL_TFSA_BASE_DEFAULT_RETURN_PCT=4.0
+      - ACTUAL_TFSA_BASE_MONTHLY_CONTRIBUTION=400.0
+      
+      # Catch-up TFSA
+      - ACTUAL_TFSA_CATCHUP_IDENTIFIER=WEALTHSIMPLE TFSA
+      - ACTUAL_TFSA_CATCHUP_DEFAULT_RETURN_PCT=8.0
+      - ACTUAL_TFSA_CATCHUP_YEAR_CONTRIBUTION=0.0
