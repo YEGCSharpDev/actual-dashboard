@@ -562,7 +562,7 @@ app.get('/api/data', async (req, res) => {
     const tfsaConfig = {
       horizon_years: Number(process.env.ACTUAL_TFSA_HORIZON_YEARS || 30),
       ytd_limit: Number(process.env.ACTUAL_TFSA_YTD_LIMIT || 7000.0),
-      annual_room: Number(process.env.ACTUAL_TFSA_ANNUAL_ROOM || 7000.0),
+      total_room: Number(process.env.ACTUAL_TFSA_TOTAL_ROOM || process.env.ACTUAL_TFSA_ANNUAL_ROOM || 7000.0),
       base: {
         identifier: cleanEnvString(process.env.ACTUAL_TFSA_BASE_IDENTIFIER, ''),
         default_return_pct: Number(process.env.ACTUAL_TFSA_BASE_DEFAULT_RETURN_PCT || 4.0),
@@ -593,6 +593,7 @@ app.get('/api/data', async (req, res) => {
       process.env.ACTUAL_TFSA_TRACKING ||
       process.env.ACTUAL_TFSA_HORIZON_YEARS ||
       process.env.ACTUAL_TFSA_YTD_LIMIT ||
+      process.env.ACTUAL_TFSA_TOTAL_ROOM ||
       process.env.ACTUAL_TFSA_ANNUAL_ROOM ||
       process.env.ACTUAL_TFSA_BASE_IDENTIFIER ||
       process.env.ACTUAL_TFSA_BASE_DEFAULT_RETURN_PCT ||

@@ -175,7 +175,7 @@ interface AppConfig {
   tfsa: {
     horizon_years: number;
     ytd_limit: number;
-    annual_room: number;
+    total_room: number;
     base: {
       identifier: string;
       default_return_pct: number;
@@ -488,7 +488,7 @@ export default function App() {
     const catchupMatch = config.tfsa.catchup.identifier.toUpperCase();
     const baseAnnualContrib = config.tfsa.base.monthly_contribution * 12;
     const wsCatchupYearAnnual = config.tfsa.catchup.catchup_year_contribution;
-    const wsFutureAnnual = config.tfsa.annual_room - baseAnnualContrib;
+    const wsFutureAnnual = config.tfsa.total_room - baseAnnualContrib;
 
     accountsList.forEach(name => {
       let currentBalance = accountDict[name];
@@ -1082,15 +1082,18 @@ export default function App() {
                     );
                   })}
                   <div className="card metric-card" style={{ background: 'var(--color-success-bg)', borderColor: 'var(--color-success-border)' }}>
-                    <span className="metric-label" style={{ color: 'var(--color-success)' }}>Total Contributed</span>
+                    <span className="metric-label" style={{ color: 'var(--color-success)' }}>Yearly Room Contribution</span>
                     <span className="metric-value" style={{ fontSize: '1.4rem', color: 'var(--color-success)' }}>${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     <span className="metric-delta delta-success">
-                      {tfsaLimit > 0 ? `${(tfsaTotal / tfsaLimit * 100).toFixed(1)}% of $${tfsaLimit.toLocaleString()} Limit` : ''}
+                      {tfsaLimit > 0 ? `$${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} of $${tfsaLimit.toLocaleString(undefined, { minimumFractionDigits: 2 })} (${(tfsaTotal / tfsaLimit * 100).toFixed(1)}%)` : ''}
                     </span>
                   </div>
                   <div className="card metric-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                    <span className="metric-label">Annual Room</span>
-                    <span className="metric-value" style={{ fontSize: '1.4rem' }}>${config.tfsa.annual_room.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    <span className="metric-label">Total Room</span>
+                    <span className="metric-value" style={{ fontSize: '1.4rem' }}>${config.tfsa.total_room.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    <span className="metric-delta delta-success">
+                      {config.tfsa.total_room > 0 ? `$${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} of $${config.tfsa.total_room.toLocaleString(undefined, { minimumFractionDigits: 2 })} (${(tfsaTotal / config.tfsa.total_room * 100).toFixed(1)}%)` : ''}
+                    </span>
                   </div>
                 </div>
 
