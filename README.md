@@ -1,110 +1,67 @@
-# Actual Budget Dashboard (Lean Node.js Migration)
+# Actual Budget Dashboard
 
-A lightweight, single-process dashboard for **Actual Budget** built on a modern web stack. Fully replaces the previous Python/Streamlit/Node hybrid sidecar architecture with a high-performance **Node.js (Express + SQLite3)** backend and a responsive **React (Vite + TypeScript)** frontend.
+> [!IMPORTANT]
+> This solution is explicitly **vibe-coded**—designed and built entirely through interactive AI agent pair programming.
 
----
-
-## Features
-
-- **Monthly Spending Analytics:** Real-time income and expense progress tracking.
-- **Custom Cashflow Sankey Diagram:** Zero-dependency, responsive SVG-based Sankey visualizer that automatically stretches to screen width.
-- **Budget Envelope Health:** Instant tracking of underbudget/underfunded envelopes for current and future months using official ActualQL queries.
-- **Key Category Progress:** Real-time progress monitoring for customized day-to-day spending categories.
-- **Investment Velocity:** Cumulative Year-to-Date (YTD) contribution velocity tracking for specialized accounts (e.g. TFSA).
-- **Interactive Projections:** Dynamic compound growth charts (using Chart.js) for RESP, RRSP, and TFSA investment accounts with interactive rate/contribution sliders.
-- **Inline Math Evaluator:** Parse and safely evaluate basic math expressions (e.g., `500+200-50`) in transaction entry/calculations without using unsafe JavaScript `eval`.
+A lightweight, single-process dashboard for **Actual Budget**. It features a modern, responsive **React (Vite + TypeScript)** frontend styled with a premium glassmorphic dark theme and a high-performance **Node.js (Express + SQLite3)** backend.
 
 ---
 
-## Technical Architecture
+## Functionality
 
-The dashboard is run as a single process for simple hosting and minimal memory footprint:
-
-1. **Backend (Express + TypeScript):**
-   - Direct integration with `@actual-app/api` in a single Node process to sync your budget.
-   - Leverages native `sqlite3` to perform direct read-only queries against the local synchronized SQLite database cache (`db.sqlite`) for complex aggregations.
-   - Safe math tokenization and evaluation engine.
-2. **Frontend (Vite + React + TypeScript):**
-   - High-contrast, glassmorphic dark mode styling.
-   - Built-in accessibility: Chart.js elements configured with high-contrast text rendering (`#cbd5e1`) and consistent typography.
-   - Pure SVG Sankey flow layouts using `ResizeObserver` for mobile/responsive scaling.
+- **Monthly Spending Analytics:** Real-time progress tracking for income and expenses.
+- **Custom Cashflow Sankey:** Zero-dependency, responsive, pure SVG-based cashflow visualization.
+- **Budget Envelope Health:** Direct monitoring of underbudget/underfunded categories for current and future months.
+- **Yearly Room & TFSA Contributions:** Progress monitoring of YTD contributions relative to YTD Limit and Total Room.
+- **Interactive Investment Projections:** Compound interest growth models for RESP, RRSP, and TFSA accounts with live projection adjustment sliders.
+- **Safe Math Evaluator:** Built-in calculation engine that parses and safely evaluates simple mathematical expressions (e.g. `100+50-10`) without calling unsafe `eval`.
 
 ---
 
-## Local Development & Testing
+## Architecture
 
-### 1. Configure Environment Variables
-Copy `.env.example` to `.env` in the root folder and configure the credentials:
+The dashboard runs as a single process for lightweight hosting and a minimal resource footprint:
 
+- **Backend (Express + TypeScript):** Synchronizes with the budget via the official `@actual-app/api` and queries the local synchronized SQLite cache (`db.sqlite`) directly to aggregate metrics.
+- **Frontend (Vite + React + TypeScript):** Served statically by the backend in production. Renders interactive charts using Chart.js and maps responsive layouts dynamically based on environment configurations.
+
+---
+
+## Development & Deployment
+
+### Dev Environment (Nix Shell)
+A Nix development flake is included for a fully isolated, self-contained workspace. Activate the environment:
 ```bash
-# Actual Budget Credentials
-ACTUAL_SERVER_URL="https://your-actual-server.com"
-ACTUAL_PASSWORD="your-server-password"
-ACTUAL_SYNC_ID="your-budget-sync-id"
-ACTUAL_ENCRYPTION_PASSWORD="your-optional-encryption-password" # if E2E is enabled
-ACTUAL_DATA_DIR="./.actual-data"
-
-# EVERYTHING BELOW THIS LINE IS OPTIONAL
-# Categories to Monitor (JSON String Arrays)
-ACTUAL_TFSA_TRACKING=["⛱️ATB TFSA", "⛱️Wealthsimple TFSA"]
-ACTUAL_BUDGET_TRACKING=["Groceries", "Rent", "Utilities", "Petrol"]
-
-# RESP Forecast Settings
-ACTUAL_RESP_IDENTIFIER="RESP"
-ACTUAL_RESP_HORIZON_YEARS=10
-ACTUAL_RESP_DEFAULT_RETURN_PCT=4.0
-ACTUAL_RESP_MONTHLY_CONTRIBUTION=400.0
-
-# RRSP Forecast Settings
-ACTUAL_RRSP_IDENTIFIER="RRSP"
-ACTUAL_RRSP_HORIZON_YEARS=30
-ACTUAL_RRSP_DEFAULT_RETURN_PCT=8.0
-ACTUAL_RRSP_ANNUAL_CONTRIBUTION=5000.0
-
-# TFSA Forecast Settings
-ACTUAL_TFSA_HORIZON_YEARS=30
-ACTUAL_TFSA_YTD_LIMIT=7000.0
-ACTUAL_TFSA_ANNUAL_ROOM=7000.0
-
-ACTUAL_TFSA_BASE_IDENTIFIER="ATB TFSA"
-ACTUAL_TFSA_BASE_DEFAULT_RETURN_PCT=4.0
-ACTUAL_TFSA_BASE_MONTHLY_CONTRIBUTION=400.0
-
-ACTUAL_TFSA_CATCHUP_IDENTIFIER="WEALTHSIMPLE TFSA"
-ACTUAL_TFSA_CATCHUP_DEFAULT_RETURN_PCT=8.0
-ACTUAL_TFSA_CATCHUP_YEAR_CONTRIBUTION=0.0
+nix develop
+# or
+nix-shell
 ```
 
-### 2. Install & Run Dev Server
-Install dependencies and run the backend/frontend servers concurrently:
+### Configuration
+Configure credentials and optional tracking settings in a root `.env` file (see `.env.example`):
+```ini
+ACTUAL_SERVER_URL="https://your-actual-server.com"
+ACTUAL_PASSWORD="your-sync-password"
+ACTUAL_SYNC_ID="your-budget-sync-id"
+ACTUAL_TFSA_TOTAL_ROOM=7000.0
+ACTUAL_TFSA_YTD_LIMIT=7000.0
+```
 
+### Local Dev Server
+Install dependencies and spin up both backend and frontend concurrently:
 ```bash
 npm install
 npm run dev
 ```
-Open your browser at `http://localhost:5173`.
+Open `http://localhost:5173` in a web browser.
 
----
+### Quality Assurance
+- **Unit Tests:** `npm test` runs vitest suites verifying safe math evaluator parsing.
+- **Compilation Check:** `npm run build` compiles and validates the entire TypeScript pipeline.
 
-## Deployment Options
-
-### Docker Compose
-Build and run the container locally using:
+### Docker Deployment
+Build and run the container locally:
 ```bash
 docker compose up -d --build
 ```
-Access the dashboard on port `8501`.
-
-### TrueNAS Deployment (No `.env` File)
-A dedicated, self-contained template is available at docker-compose.truenas.yml
-- All configuration keys are defined **inline** within the `environment:` block.
-- Pre-configured to run under the user/group mapping `568:3002` (standard TrueNAS `apps` permissions) to prevent host dataset permission issues.
-
----
-
-## Quality Assurance
-
-We maintain code validation pipelines running on GitHub Actions:
-
-- **Unit Tests:** `npm test` runs our safe mathematical expression parser tests using **Vitest**.
-- **Compilation Check:** `npm run build` verifies type safety and compiles/bundles the frontend and backend assets.
+Access the dashboard on port `8501`. A TrueNAS-specific configuration template is also available in [docker-compose.truenas.yml](file:///home/shanks/work/actual-dashboard/docker-compose.truenas.yml).
