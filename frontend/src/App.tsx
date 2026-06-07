@@ -187,6 +187,7 @@ interface AppConfig {
       catchup_year_contribution: number;
     };
   };
+  hasInvestments: boolean;
 }
 
 interface DashboardData {
@@ -812,20 +813,22 @@ export default function App() {
       </header>
 
       {/* Page Selector Tabs */}
-      <div className="tabs-container" style={{ marginBottom: '2rem' }}>
-        <button
-          className={`tab-button ${activePage === 'dashboard' ? 'active' : ''}`}
-          onClick={() => setActivePage('dashboard')}
-        >
-          Dashboard
-        </button>
-        <button
-          className={`tab-button ${activePage === 'investments' ? 'active' : ''}`}
-          onClick={() => setActivePage('investments')}
-        >
-          Investments
-        </button>
-      </div>
+      {config.hasInvestments && (
+        <div className="tabs-container" style={{ marginBottom: '2rem' }}>
+          <button
+            className={`tab-button ${activePage === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setActivePage('dashboard')}
+          >
+            Dashboard
+          </button>
+          <button
+            className={`tab-button ${activePage === 'investments' ? 'active' : ''}`}
+            onClick={() => setActivePage('investments')}
+          >
+            Investments
+          </button>
+        </div>
+      )}
 
       {activePage === 'dashboard' && (
         <>

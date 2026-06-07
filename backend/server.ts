@@ -575,6 +575,27 @@ app.get('/api/data', async (req, res) => {
       }
     };
 
+    const hasInvestments = !!(
+      process.env.ACTUAL_TFSA_TRACKING ||
+      process.env.ACTUAL_RESP_IDENTIFIER ||
+      process.env.ACTUAL_RESP_HORIZON_YEARS ||
+      process.env.ACTUAL_RESP_DEFAULT_RETURN_PCT ||
+      process.env.ACTUAL_RESP_MONTHLY_CONTRIBUTION ||
+      process.env.ACTUAL_RRSP_IDENTIFIER ||
+      process.env.ACTUAL_RRSP_HORIZON_YEARS ||
+      process.env.ACTUAL_RRSP_DEFAULT_RETURN_PCT ||
+      process.env.ACTUAL_RRSP_ANNUAL_CONTRIBUTION ||
+      process.env.ACTUAL_TFSA_HORIZON_YEARS ||
+      process.env.ACTUAL_TFSA_YTD_LIMIT ||
+      process.env.ACTUAL_TFSA_ANNUAL_ROOM ||
+      process.env.ACTUAL_TFSA_BASE_IDENTIFIER ||
+      process.env.ACTUAL_TFSA_BASE_DEFAULT_RETURN_PCT ||
+      process.env.ACTUAL_TFSA_BASE_MONTHLY_CONTRIBUTION ||
+      process.env.ACTUAL_TFSA_CATCHUP_IDENTIFIER ||
+      process.env.ACTUAL_TFSA_CATCHUP_DEFAULT_RETURN_PCT ||
+      process.env.ACTUAL_TFSA_CATCHUP_YEAR_CONTRIBUTION
+    );
+
     res.json({
       accounts: enrichedAccounts,
       transactions: normalizedTransactions,
@@ -585,6 +606,7 @@ app.get('/api/data', async (req, res) => {
         resp: respConfig,
         rrsp: rrspConfig,
         tfsa: tfsaConfig,
+        hasInvestments,
       },
       error: null
     });
