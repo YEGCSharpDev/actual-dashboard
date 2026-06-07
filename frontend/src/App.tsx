@@ -1102,7 +1102,7 @@ export default function App() {
                     </div>
                   </div>
                   <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.4rem', fontWeight: 600 }}>
-                    ${tfsaRemaining.toLocaleString(undefined, { minimumFractionDigits: 2 })} remaining of ${tfsaLimit.toLocaleString()} annual limit
+                    ${tfsaRemaining.toLocaleString(undefined, { minimumFractionDigits: 2 })} remaining of ${tfsaLimit.toLocaleString()} available room
                   </p>
                 </div>
 
