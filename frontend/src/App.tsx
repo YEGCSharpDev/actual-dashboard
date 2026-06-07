@@ -220,6 +220,9 @@ export default function App() {
   
   // Investment tab state
   const [activeInvestTab, setActiveInvestTab] = useState<'RESP' | 'RRSP' | 'TFSA'>('RESP');
+  
+  // Page selector state
+  const [activePage, setActivePage] = useState<'dashboard' | 'investments'>('dashboard');
 
   const fetchSyncStatus = useCallback(async () => {
     try {
@@ -808,321 +811,345 @@ export default function App() {
         </div>
       </header>
 
-      {/* 1. Monthly Overview Grid */}
-      <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Overview</h2>
-      <div className="grid-cols-4">
-        {/* Actual Income */}
-        <div className="card metric-card">
-          <span className="metric-label">
-            Actual Income
-            <span className="info-bubble" data-tooltip="Enter any additional expected income for the month (supports expressions like 500+200)">ⓘ</span>
-          </span>
-          <span className="metric-value">${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          <input
-            type="text"
-            className="metric-input"
-            placeholder="Forecasted Income (e.g. 500+200)"
-            value={addInc}
-            onChange={e => setAddInc(e.target.value)}
-          />
-        </div>
-
-        {/* Actual Expenses */}
-        <div className="card metric-card">
-          <span className="metric-label">
-            Actual Expenses
-            <span className="info-bubble" data-tooltip="Enter any additional expected expenses for the month (supports expressions like 100+50)">ⓘ</span>
-          </span>
-          <span className="metric-value">${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          <input
-            type="text"
-            className="metric-input"
-            placeholder="Forecasted Expense (e.g. 100+50)"
-            value={addExp}
-            onChange={e => setAddExp(e.target.value)}
-          />
-        </div>
-
-        {/* Actual Net */}
-        <div className="card metric-card">
-          <span className="metric-label">Actual Net</span>
-          <span className="metric-value" style={{ color: netIncome >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-            ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-          <span className={`metric-delta ${netIncome >= 0 ? 'delta-success' : 'delta-danger'}`}>
-            {totalIncome > 0 ? `${savingsRate.toFixed(1)}% savings rate` : ''}
-          </span>
-        </div>
-
-        {/* Expected Net */}
-        <div className="card metric-card">
-          <span className="metric-label">Expected Net</span>
-          <span className="metric-value" style={{ color: forecastNet >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-            ${forecastNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-          <span className={`metric-delta ${forecastNet >= 0 ? 'delta-success' : 'delta-danger'}`}>
-            {expectedIncome > 0 ? `${expectedSavingsRate.toFixed(1)}% expected savings` : ''}
-          </span>
-        </div>
+      {/* Page Selector Tabs */}
+      <div className="tabs-container" style={{ marginBottom: '2rem' }}>
+        <button
+          className={`tab-button ${activePage === 'dashboard' ? 'active' : ''}`}
+          onClick={() => setActivePage('dashboard')}
+        >
+          Dashboard
+        </button>
+        <button
+          className={`tab-button ${activePage === 'investments' ? 'active' : ''}`}
+          onClick={() => setActivePage('investments')}
+        >
+          Investments
+        </button>
       </div>
 
-      {/* 2. Progress Bars */}
-      <div className="card" style={{ marginBottom: '2rem' }}>
-        {/* Income Progress Bar */}
-        <div className="progress-bar-wrapper">
-          <div className="progress-bar-header" style={{ color: 'var(--color-success)' }}>
-            <span>Income</span>
-            <span>Target: ${Math.round(expectedIncome).toLocaleString()}</span>
-          </div>
-          <div className="progress-bar-track" style={{ borderColor: 'var(--color-success-border)', backgroundColor: 'rgba(16, 185, 129, 0.05)' }}>
-            <div className="progress-bar-fill" style={{ width: `${incPct}%`, backgroundColor: 'var(--color-success)' }}>
-              <span className="progress-bar-amount">${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Expenses Progress Bar */}
-        <div className="progress-bar-wrapper" style={{ marginBottom: 0 }}>
-          <div className="progress-bar-header" style={{ color: 'var(--color-danger)' }}>
-            <span>Expenses</span>
-            <span>Target: ${Math.round(expectedExpenses).toLocaleString()}</span>
-          </div>
-          <div className="progress-bar-track" style={{ borderColor: 'var(--color-danger-border)', backgroundColor: 'rgba(244, 63, 94, 0.05)' }}>
-            <div className="progress-bar-fill" style={{ width: `${expPct}%`, backgroundColor: 'var(--color-danger)' }}>
-              <span className="progress-bar-amount">${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Envelope Health Checks */}
-      <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Future Envelope Health</h2>
-      <div className="grid-cols-3">
-        {targetMonthsArr.map(item => {
-          const val = underbudget[item.key] || 0;
-          return (
-            <div className="card metric-card" key={item.key} style={{ borderColor: val > 0 ? 'var(--color-warning-border)' : 'var(--color-success-border)' }}>
-              <span className="metric-label">Underfunded ({item.label})</span>
-              <span className="metric-value" style={{ color: val > 0 ? 'var(--color-warning)' : 'var(--color-success)' }}>
-                ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className={`metric-delta ${val > 0 ? 'delta-danger' : 'delta-success'}`}>
-                {val > 0 ? 'Action Required' : 'Fully Funded'}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 4. Key Category Tracking */}
-      {config.categories.budget_tracking.length > 0 && (
+      {activePage === 'dashboard' && (
         <>
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Key Category Tracking</h2>
-          <div className="card" style={{ marginBottom: '2rem' }}>
-            {config.categories.budget_tracking.map(cat => {
-              const budgeted = budgets[cat] || 0;
-              const spent = dfExpenses.filter(t => t.Category_Name === cat).reduce((acc, t) => acc + t.amount, 0);
-              const left = budgeted - spent;
-              
-              const pct = budgeted > 0 ? (spent / budgeted) * 100 : (spent > 0 ? 100 : 0);
-              const visPct = Math.min(pct, 100.0);
-              
-              let barColor = 'var(--color-success)';
-              let barBg = 'var(--color-success-bg)';
-              let borderStyle = 'rgba(16, 185, 129, 0.15)';
-              if (pct >= 90) {
-                barColor = 'var(--color-danger)';
-                barBg = 'var(--color-danger-bg)';
-                borderStyle = 'rgba(244, 63, 94, 0.15)';
-              } else if (pct >= 75) {
-                barColor = 'var(--color-warning)';
-                barBg = 'var(--color-warning-bg)';
-                borderStyle = 'rgba(245, 158, 11, 0.15)';
-              }
+          {/* 1. Monthly Overview Grid */}
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Overview</h2>
+          <div className="grid-cols-4">
+            {/* Actual Income */}
+            <div className="card metric-card">
+              <span className="metric-label">
+                Actual Income
+                <span className="info-bubble" data-tooltip="Enter any additional expected income for the month (supports expressions like 500+200)">ⓘ</span>
+              </span>
+              <span className="metric-value">${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <input
+                type="text"
+                className="metric-input"
+                placeholder="Forecasted Income (e.g. 500+200)"
+                value={addInc}
+                onChange={e => setAddInc(e.target.value)}
+              />
+            </div>
 
+            {/* Actual Expenses */}
+            <div className="card metric-card">
+              <span className="metric-label">
+                Actual Expenses
+                <span className="info-bubble" data-tooltip="Enter any additional expected expenses for the month (supports expressions like 100+50)">ⓘ</span>
+              </span>
+              <span className="metric-value">${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <input
+                type="text"
+                className="metric-input"
+                placeholder="Forecasted Expense (e.g. 100+50)"
+                value={addExp}
+                onChange={e => setAddExp(e.target.value)}
+              />
+            </div>
+
+            {/* Actual Net */}
+            <div className="card metric-card">
+              <span className="metric-label">Actual Net</span>
+              <span className="metric-value" style={{ color: netIncome >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className={`metric-delta ${netIncome >= 0 ? 'delta-success' : 'delta-danger'}`}>
+                {totalIncome > 0 ? `${savingsRate.toFixed(1)}% savings rate` : ''}
+              </span>
+            </div>
+
+            {/* Expected Net */}
+            <div className="card metric-card">
+              <span className="metric-label">Expected Net</span>
+              <span className="metric-value" style={{ color: forecastNet >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                ${forecastNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className={`metric-delta ${forecastNet >= 0 ? 'delta-success' : 'delta-danger'}`}>
+                {expectedIncome > 0 ? `${expectedSavingsRate.toFixed(1)}% expected savings` : ''}
+              </span>
+            </div>
+          </div>
+
+          {/* 2. Progress Bars */}
+          <div className="card" style={{ marginBottom: '2rem' }}>
+            {/* Income Progress Bar */}
+            <div className="progress-bar-wrapper">
+              <div className="progress-bar-header" style={{ color: 'var(--color-success)' }}>
+                <span>Income</span>
+                <span>Target: ${Math.round(expectedIncome).toLocaleString()}</span>
+              </div>
+              <div className="progress-bar-track" style={{ borderColor: 'var(--color-success-border)', backgroundColor: 'rgba(16, 185, 129, 0.05)' }}>
+                <div className="progress-bar-fill" style={{ width: `${incPct}%`, backgroundColor: 'var(--color-success)' }}>
+                  <span className="progress-bar-amount">${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Expenses Progress Bar */}
+            <div className="progress-bar-wrapper" style={{ marginBottom: 0 }}>
+              <div className="progress-bar-header" style={{ color: 'var(--color-danger)' }}>
+                <span>Expenses</span>
+                <span>Target: ${Math.round(expectedExpenses).toLocaleString()}</span>
+              </div>
+              <div className="progress-bar-track" style={{ borderColor: 'var(--color-danger-border)', backgroundColor: 'rgba(244, 63, 94, 0.05)' }}>
+                <div className="progress-bar-fill" style={{ width: `${expPct}%`, backgroundColor: 'var(--color-danger)' }}>
+                  <span className="progress-bar-amount">${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Envelope Health Checks */}
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Future Envelope Health</h2>
+          <div className="grid-cols-3" style={{ marginBottom: '2rem' }}>
+            {targetMonthsArr.map(item => {
+              const val = underbudget[item.key] || 0;
               return (
-                <div className="cat-row" key={cat}>
-                  <div className="cat-row-header">
-                    <span>{cat}</span>
-                    <span style={{ color: barColor }}>
-                      {left >= 0 ? `$${left.toLocaleString(undefined, { minimumFractionDigits: 2 })} left` : `$${Math.abs(left).toLocaleString(undefined, { minimumFractionDigits: 2 })} over!`}
-                    </span>
-                  </div>
-                  <div className="cat-row-track" style={{ backgroundColor: barBg, borderColor: borderStyle }}>
-                    <div className="cat-row-fill" style={{ width: `${visPct}%`, backgroundColor: barColor }} />
-                    <div className="cat-row-labels">
-                      <span>{pct.toFixed(1)}%</span>
-                      <span>${spent.toLocaleString(undefined, { minimumFractionDigits: 2 })} / ${Math.round(budgeted).toLocaleString()}</span>
-                    </div>
-                  </div>
+                <div className="card metric-card" key={item.key} style={{ borderColor: val > 0 ? 'var(--color-warning-border)' : 'var(--color-success-border)' }}>
+                  <span className="metric-label">Underfunded ({item.label})</span>
+                  <span className="metric-value" style={{ color: val > 0 ? 'var(--color-warning)' : 'var(--color-success)' }}>
+                    ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className={`metric-delta ${val > 0 ? 'delta-danger' : 'delta-success'}`}>
+                    {val > 0 ? 'Action Required' : 'Fully Funded'}
+                  </span>
                 </div>
               );
             })}
           </div>
-        </>
-      )}
 
-      {/* 5. Sankey Diagram */}
-      <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Cashflow</h2>
-      <div className="card" style={{ marginBottom: '2rem' }}>
-        {/* Summarize categories */}
-        {(() => {
-          const incSummary: Record<string, number> = {};
-          dfIncome.forEach(t => {
-            incSummary[t.Category_Name] = (incSummary[t.Category_Name] || 0) + (t.amount * -1);
-          });
-          const expSummary: Record<string, number> = {};
-          dfExpenses.forEach(t => {
-            expSummary[t.Category_Name] = (expSummary[t.Category_Name] || 0) + t.amount;
-          });
+          {/* 4. Key Category Tracking */}
+          {config.categories.budget_tracking.length > 0 && (
+            <>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Key Category Tracking</h2>
+              <div className="card" style={{ marginBottom: '2rem' }}>
+                {config.categories.budget_tracking.map(cat => {
+                  const budgeted = budgets[cat] || 0;
+                  const spent = dfExpenses.filter(t => t.Category_Name === cat).reduce((acc, t) => acc + t.amount, 0);
+                  const left = budgeted - spent;
+                  
+                  const pct = budgeted > 0 ? (spent / budgeted) * 100 : (spent > 0 ? 100 : 0);
+                  const visPct = Math.min(pct, 100.0);
+                  
+                  let barColor = 'var(--color-success)';
+                  let barBg = 'var(--color-success-bg)';
+                  let borderStyle = 'rgba(16, 185, 129, 0.15)';
+                  if (pct >= 90) {
+                    barColor = 'var(--color-danger)';
+                    barBg = 'var(--color-danger-bg)';
+                    borderStyle = 'rgba(244, 63, 94, 0.15)';
+                  } else if (pct >= 75) {
+                    barColor = 'var(--color-warning)';
+                    barBg = 'var(--color-warning-bg)';
+                    borderStyle = 'rgba(245, 158, 11, 0.15)';
+                  }
 
-          const incArray = Object.entries(incSummary).map(([Category_Name, amount]) => ({ Category_Name, amount }));
-          const expArray = Object.entries(expSummary).map(([Category_Name, amount]) => ({ Category_Name, amount }));
-
-          return <Sankey income={incArray} expenses={expArray} />;
-        })()}
-      </div>
-
-      {/* 6. Transaction Log */}
-      <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Transaction Log</h2>
-      <div className="card" style={{ marginBottom: '2rem', padding: 0, overflow: 'hidden' }}>
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Payee</th>
-                <th>Category</th>
-                <th style={{ textAlign: 'right' }}>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dfExpenses.length === 0 ? (
-                <tr>
-                  <td colSpan={4} style={{ textAlign: 'center', color: 'var(--color-text-secondary)', padding: '2rem' }}>No expense transactions recorded this month.</td>
-                </tr>
-              ) : (
-                [...dfExpenses]
-                  .sort((a, b) => b.date.localeCompare(a.date))
-                  .map(t => (
-                    <tr key={t.id}>
-                      <td style={{ color: 'var(--color-text-secondary)' }}>{t.date}</td>
-                      <td style={{ fontWeight: 600 }}>{t.Payee_Name}</td>
-                      <td>
-                        <span style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                          {t.Category_Name}
+                  return (
+                    <div className="cat-row" key={cat}>
+                      <div className="cat-row-header">
+                        <span>{cat}</span>
+                        <span style={{ color: barColor }}>
+                          {left >= 0 ? `$${left.toLocaleString(undefined, { minimumFractionDigits: 2 })} left` : `$${Math.abs(left).toLocaleString(undefined, { minimumFractionDigits: 2 })} over!`}
                         </span>
-                      </td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--color-danger)' }}>
-                        ${t.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      </div>
+                      <div className="cat-row-track" style={{ backgroundColor: barBg, borderColor: borderStyle }}>
+                        <div className="cat-row-fill" style={{ width: `${visPct}%`, backgroundColor: barColor }} />
+                        <div className="cat-row-labels">
+                          <span>{pct.toFixed(1)}%</span>
+                          <span>${spent.toLocaleString(undefined, { minimumFractionDigits: 2 })} / ${Math.round(budgeted).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
-      {/* 7. TFSA Contributions YTD */}
-      {tfsaCats.length > 0 && (
-        <>
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>TFSA Contributions (YTD)</h2>
+          {/* 5. Sankey Diagram */}
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Cashflow</h2>
           <div className="card" style={{ marginBottom: '2rem' }}>
-            <div className="grid-cols-4" style={{ marginBottom: '1.5rem' }}>
-              {tfsaCats.map(cat => {
-                const total = dfTfsa.filter(t => t.Category_Name === cat).reduce((acc, t) => acc + t.amount, 0);
-                return (
-                  <div className="card metric-card" key={cat} style={{ background: 'rgba(255,255,255,0.02)' }}>
-                    <span className="metric-label">{cat}</span>
-                    <span className="metric-value" style={{ fontSize: '1.4rem' }}>${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  </div>
-                );
-              })}
-              <div className="card metric-card" style={{ background: 'var(--color-success-bg)', borderColor: 'var(--color-success-border)' }}>
-                <span className="metric-label" style={{ color: 'var(--color-success)' }}>Total Contributed</span>
-                <span className="metric-value" style={{ fontSize: '1.4rem', color: 'var(--color-success)' }}>${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                <span className="metric-delta delta-success">
-                  {tfsaLimit > 0 ? `${(tfsaTotal / tfsaLimit * 100).toFixed(1)}% of $${tfsaLimit.toLocaleString()} Limit` : ''}
-                </span>
-              </div>
-            </div>
+            {/* Summarize categories */}
+            {(() => {
+              const incSummary: Record<string, number> = {};
+              dfIncome.forEach(t => {
+                incSummary[t.Category_Name] = (incSummary[t.Category_Name] || 0) + (t.amount * -1);
+              });
+              const expSummary: Record<string, number> = {};
+              dfExpenses.forEach(t => {
+                expSummary[t.Category_Name] = (expSummary[t.Category_Name] || 0) + t.amount;
+              });
 
-            {/* TFSA Limit Progress Bar */}
-            <div className="progress-bar-wrapper" style={{ marginBottom: '2rem' }}>
-              <div className="progress-bar-header" style={{ color: 'var(--color-success)' }}>
-                <span>Remaining Room</span>
-                <span>Limit: ${tfsaLimit.toLocaleString()}</span>
-              </div>
-              <div className="progress-bar-track" style={{ borderColor: 'var(--color-success-border)', backgroundColor: 'rgba(16, 185, 129, 0.05)' }}>
-                <div className="progress-bar-fill" style={{ width: `${tfsaProgressPct * 100}%`, backgroundColor: 'var(--color-success)' }}>
-                  <span className="progress-bar-amount">${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.4rem', fontWeight: 600 }}>
-                ${tfsaRemaining.toLocaleString(undefined, { minimumFractionDigits: 2 })} remaining of ${tfsaLimit.toLocaleString()} annual limit
-              </p>
-            </div>
+              const incArray = Object.entries(incSummary).map(([Category_Name, amount]) => ({ Category_Name, amount }));
+              const expArray = Object.entries(expSummary).map(([Category_Name, amount]) => ({ Category_Name, amount }));
 
-            {/* YTD Cumulative Line Chart */}
-            {tfsaVelocityChart && (
-              <div>
-                <h3 style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem', fontWeight: 700 }}>Contribution Velocity</h3>
-                <div style={{ height: '300px', position: 'relative' }}>
-                  <Line
-                    data={tfsaVelocityChart}
-                    options={{
-                      responsive: true,
-                      maintainAspectRatio: false,
-                      plugins: {
-                        legend: {
-                          position: 'bottom',
-                          labels: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
-                        },
-                        tooltip: {
-                          callbacks: {
-                            label: (context) => `${context.dataset.label}: $${Math.round(context.raw as number).toLocaleString()}`
-                          }
-                        }
-                      },
-                      scales: {
-                        x: {
-                          grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                          ticks: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
-                        },
-                        y: {
-                          grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                          ticks: {
-                            color: '#cbd5e1',
-                            font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" },
-                            callback: (val) => `$${Number(val).toLocaleString()}`
-                          }
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-            )}
+              return <Sankey income={incArray} expenses={expArray} />;
+            })()}
+          </div>
+
+          {/* 6. Transaction Log */}
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Transaction Log</h2>
+          <div className="card" style={{ marginBottom: '2rem', padding: 0, overflow: 'hidden' }}>
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Payee</th>
+                    <th>Category</th>
+                    <th style={{ textAlign: 'right' }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dfExpenses.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: 'center', color: 'var(--color-text-secondary)', padding: '2rem' }}>No expense transactions recorded this month.</td>
+                    </tr>
+                  ) : (
+                    [...dfExpenses]
+                      .sort((a, b) => b.date.localeCompare(a.date))
+                      .map(t => (
+                        <tr key={t.id}>
+                          <td style={{ color: 'var(--color-text-secondary)' }}>{t.date}</td>
+                          <td style={{ fontWeight: 600 }}>{t.Payee_Name}</td>
+                          <td>
+                            <span style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                              {t.Category_Name}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--color-danger)' }}>
+                            ${t.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}
 
-      {/* 8. Investment Forecasts */}
-      <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Investment Forecasts</h2>
-      <div className="tabs-container">
-        {(['RESP', 'RRSP', 'TFSA'] as const).map(tab => (
-          <button
-            key={tab}
-            className={`tab-button ${activeInvestTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveInvestTab(tab)}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
+      {activePage === 'investments' && (
+        <>
+          {/* 7. TFSA Contributions YTD */}
+          {tfsaCats.length > 0 && (
+            <>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>TFSA Contributions (YTD)</h2>
+              <div className="card" style={{ marginBottom: '2rem' }}>
+                <div className="grid-cols-4" style={{ marginBottom: '1.5rem' }}>
+                  {tfsaCats.map(cat => {
+                    const total = dfTfsa.filter(t => t.Category_Name === cat).reduce((acc, t) => acc + t.amount, 0);
+                    return (
+                      <div className="card metric-card" key={cat} style={{ background: 'rgba(255,255,255,0.02)' }}>
+                        <span className="metric-label">{cat}</span>
+                        <span className="metric-value" style={{ fontSize: '1.4rem' }}>${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    );
+                  })}
+                  <div className="card metric-card" style={{ background: 'var(--color-success-bg)', borderColor: 'var(--color-success-border)' }}>
+                    <span className="metric-label" style={{ color: 'var(--color-success)' }}>Total Contributed</span>
+                    <span className="metric-value" style={{ fontSize: '1.4rem', color: 'var(--color-success)' }}>${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    <span className="metric-delta delta-success">
+                      {tfsaLimit > 0 ? `${(tfsaTotal / tfsaLimit * 100).toFixed(1)}% of $${tfsaLimit.toLocaleString()} Limit` : ''}
+                    </span>
+                  </div>
+                </div>
 
-      {renderInvestmentProjections()}
+                {/* TFSA Limit Progress Bar */}
+                <div className="progress-bar-wrapper" style={{ marginBottom: '2rem' }}>
+                  <div className="progress-bar-header" style={{ color: 'var(--color-success)' }}>
+                    <span>Remaining Room</span>
+                    <span>Limit: ${tfsaLimit.toLocaleString()}</span>
+                  </div>
+                  <div className="progress-bar-track" style={{ borderColor: 'var(--color-success-border)', backgroundColor: 'rgba(16, 185, 129, 0.05)' }}>
+                    <div className="progress-bar-fill" style={{ width: `${tfsaProgressPct * 100}%`, backgroundColor: 'var(--color-success)' }}>
+                      <span className="progress-bar-amount">${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.4rem', fontWeight: 600 }}>
+                    ${tfsaRemaining.toLocaleString(undefined, { minimumFractionDigits: 2 })} remaining of ${tfsaLimit.toLocaleString()} annual limit
+                  </p>
+                </div>
+
+                {/* YTD Cumulative Line Chart */}
+                {tfsaVelocityChart && (
+                  <div>
+                    <h3 style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem', fontWeight: 700 }}>Contribution Velocity</h3>
+                    <div style={{ height: '300px', position: 'relative' }}>
+                      <Line
+                        data={tfsaVelocityChart}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              position: 'bottom',
+                              labels: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
+                            },
+                            tooltip: {
+                              callbacks: {
+                                label: (context) => `${context.dataset.label}: $${Math.round(context.raw as number).toLocaleString()}`
+                              }
+                            }
+                          },
+                          scales: {
+                            x: {
+                              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                              ticks: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
+                            },
+                            y: {
+                              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                              ticks: {
+                                color: '#cbd5e1',
+                                font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" },
+                                callback: (val) => `$${Number(val).toLocaleString()}`
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* 8. Investment Forecasts */}
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Investment Forecasts</h2>
+          <div className="tabs-container">
+            {(['RESP', 'RRSP', 'TFSA'] as const).map(tab => (
+              <button
+                key={tab}
+                className={`tab-button ${activeInvestTab === tab ? 'active' : ''}`}
+                onClick={() => setActiveInvestTab(tab)}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {renderInvestmentProjections()}
+        </>
+      )}
     </div>
   );
 }
