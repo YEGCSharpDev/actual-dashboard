@@ -1088,6 +1088,10 @@ export default function App() {
                       {tfsaLimit > 0 ? `${(tfsaTotal / tfsaLimit * 100).toFixed(1)}% of $${tfsaLimit.toLocaleString()} Limit` : ''}
                     </span>
                   </div>
+                  <div className="card metric-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                    <span className="metric-label">Annual Room</span>
+                    <span className="metric-value" style={{ fontSize: '1.4rem' }}>${config.tfsa.annual_room.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
                 </div>
 
                 {/* TFSA Limit Progress Bar */}
