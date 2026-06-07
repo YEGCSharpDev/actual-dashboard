@@ -37,39 +37,41 @@ The dashboard is run as a single process for simple hosting and minimal memory f
 Copy `.env.example` to `.env` in the root folder and configure the credentials:
 
 ```bash
-# Actual Budget Credentials
-ACTUAL_SERVER_URL="https://your-actual-server.com"
-ACTUAL_PASSWORD="your-server-password"
+# Actual Budget Server configuration
+ACTUAL_SERVER_URL="https://your-actual-server-domain.com"
+ACTUAL_PASSWORD="your-sync-server-password"
 ACTUAL_SYNC_ID="your-budget-sync-id"
-ACTUAL_ENCRYPTION_PASSWORD="your-optional-encryption-password" # if E2E is enabled
+ACTUAL_ENCRYPTION_PASSWORD="your-optional-encryption-password"
 ACTUAL_DATA_DIR="./.actual-data"
 
 # EVERYTHING BELOW THIS LINE IS OPTIONAL
-# Categories to Monitor (JSON String Arrays)
-ACTUAL_TFSA_TRACKING=["⛱️ATB TFSA", "⛱️Wealthsimple TFSA"]
-ACTUAL_BUDGET_TRACKING=["Groceries", "Rent", "Utilities", "Petrol"]
+# Dashboard Configurations
+ACTUAL_TFSA_TRACKING=["⛱️🍸ATB TFSA", "⛱️🍸Wealthsimple TFSA"]
+ACTUAL_BUDGET_TRACKING=["🥡 Eating Out", "🏬 Groceries", "🏢 Office Going Expenses", "⛽ Petrol"]
 
-# RESP Forecast Settings
+# RESP Forecast settings
 ACTUAL_RESP_IDENTIFIER="RESP"
 ACTUAL_RESP_HORIZON_YEARS=10
 ACTUAL_RESP_DEFAULT_RETURN_PCT=4.0
 ACTUAL_RESP_MONTHLY_CONTRIBUTION=400.0
 
-# RRSP Forecast Settings
+# RRSP Forecast settings
 ACTUAL_RRSP_IDENTIFIER="RRSP"
 ACTUAL_RRSP_HORIZON_YEARS=30
 ACTUAL_RRSP_DEFAULT_RETURN_PCT=8.0
 ACTUAL_RRSP_ANNUAL_CONTRIBUTION=5000.0
 
-# TFSA Forecast Settings
+# TFSA Forecast settings
 ACTUAL_TFSA_HORIZON_YEARS=30
 ACTUAL_TFSA_YTD_LIMIT=7000.0
 ACTUAL_TFSA_ANNUAL_ROOM=7000.0
 
+# Base TFSA (e.g. ATB TFSA)
 ACTUAL_TFSA_BASE_IDENTIFIER="ATB TFSA"
 ACTUAL_TFSA_BASE_DEFAULT_RETURN_PCT=4.0
 ACTUAL_TFSA_BASE_MONTHLY_CONTRIBUTION=400.0
 
+# Catchup TFSA (e.g. Wealthsimple TFSA)
 ACTUAL_TFSA_CATCHUP_IDENTIFIER="WEALTHSIMPLE TFSA"
 ACTUAL_TFSA_CATCHUP_DEFAULT_RETURN_PCT=8.0
 ACTUAL_TFSA_CATCHUP_YEAR_CONTRIBUTION=0.0
