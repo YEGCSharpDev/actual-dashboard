@@ -1088,9 +1088,9 @@ export default function App() {
                       {tfsaLimit > 0 ? `$${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} of $${tfsaLimit.toLocaleString(undefined, { minimumFractionDigits: 2 })} (${(tfsaTotal / tfsaLimit * 100).toFixed(1)}%)` : ''}
                     </span>
                   </div>
-                  <div className="card metric-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                    <span className="metric-label">Total Room</span>
-                    <span className="metric-value" style={{ fontSize: '1.4rem' }}>${config.tfsa.total_room.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <div className="card metric-card" style={{ background: 'var(--color-success-bg)', borderColor: 'var(--color-success-border)' }}>
+                    <span className="metric-label" style={{ color: 'var(--color-success)' }}>Total Room</span>
+                    <span className="metric-value" style={{ fontSize: '1.4rem', color: 'var(--color-success)' }}>${config.tfsa.total_room.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     <span className="metric-delta delta-success">
                       {config.tfsa.total_room > 0 ? `$${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} of $${config.tfsa.total_room.toLocaleString(undefined, { minimumFractionDigits: 2 })} (${(tfsaTotal / config.tfsa.total_room * 100).toFixed(1)}%)` : ''}
                     </span>
