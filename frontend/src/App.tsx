@@ -188,6 +188,9 @@ interface AppConfig {
     };
   };
   hasInvestments: boolean;
+  hasRESP: boolean;
+  hasRRSP: boolean;
+  hasTFSA: boolean;
 }
 
 interface DashboardData {
@@ -253,6 +256,17 @@ export default function App() {
           setRrspReturnPct(json.config.rrsp.default_return_pct);
           setTfsaBaseReturnPct(json.config.tfsa.base.default_return_pct);
           setTfsaWsReturnPct(json.config.tfsa.catchup.default_return_pct);
+        }
+
+        // Set active tab to the first configured investment category if current activeInvestTab is not available
+        if (json.config) {
+          const available: ('RESP' | 'RRSP' | 'TFSA')[] = [];
+          if (json.config.hasRESP) available.push('RESP');
+          if (json.config.hasRRSP) available.push('RRSP');
+          if (json.config.hasTFSA) available.push('TFSA');
+          if (available.length > 0 && !available.includes(activeInvestTab)) {
+            setActiveInvestTab(available[0]);
+          }
         }
       }
     } catch (e: any) {
@@ -1053,7 +1067,7 @@ export default function App() {
       {activePage === 'investments' && (
         <>
           {/* 7. TFSA Contributions YTD */}
-          {tfsaCats.length > 0 && (
+          {config.hasTFSA && tfsaCats.length > 0 && (
             <>
               <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>TFSA Contributions (YTD)</h2>
               <div className="card" style={{ marginBottom: '2rem' }}>
@@ -1139,7 +1153,11 @@ export default function App() {
           {/* 8. Investment Forecasts */}
           <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Investment Forecasts</h2>
           <div className="tabs-container">
-            {(['RESP', 'RRSP', 'TFSA'] as const).map(tab => (
+            {([
+              config.hasRESP && 'RESP',
+              config.hasRRSP && 'RRSP',
+              config.hasTFSA && 'TFSA'
+            ].filter(Boolean) as ('RESP' | 'RRSP' | 'TFSA')[]).map(tab => (
               <button
                 key={tab}
                 className={`tab-button ${activeInvestTab === tab ? 'active' : ''}`}
