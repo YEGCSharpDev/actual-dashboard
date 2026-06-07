@@ -64,7 +64,7 @@ services:
       - ACTUAL_TFSA_HORIZON_YEARS=30
       # Your remaining room/limit for the current YTD:
       - ACTUAL_TFSA_YTD_LIMIT=7000.0
-      # Standard annual contribution room added every year (e.g., $7000 in Canada for 2024/2025):
+      # Cumulative room left from previous years (including current year):
       - ACTUAL_TFSA_TOTAL_ROOM=7000.0
       
       # Base TFSA (e.g. ATB TFSA) settings
