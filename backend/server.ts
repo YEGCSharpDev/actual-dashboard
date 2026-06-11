@@ -428,9 +428,16 @@ app.get('/api/data', async (req, res) => {
     // Let's do a quick query to verify. Wait, we can also query the sum of transactions for that account.
     // But accounts table usually has a balance column, let's select accounts with balance.
     const rawAccounts = await queryLocalDb(`
-      SELECT id, name, offbudget, closed, balance_current
-      FROM accounts
-      WHERE tombstone = 0 AND closed = 0
+      SELECT 
+        a.id, 
+        a.name, 
+        a.offbudget, 
+        a.closed, 
+        COALESCE(SUM(t.amount), 0) as balance_current
+      FROM accounts a
+      LEFT JOIN v_transactions t ON a.id = t.account AND t.tombstone = 0 AND t.is_parent = 0
+      WHERE a.tombstone = 0 AND a.closed = 0
+      GROUP BY a.id, a.name, a.offbudget, a.closed
     `);
 
     const enrichedAccounts = rawAccounts.map(acc => ({
@@ -449,7 +456,9 @@ app.get('/api/data', async (req, res) => {
         t.amount, 
         t.account, 
         a.name as account_name,
+        a.offbudget as account_offbudget,
         p.name as payee_name, 
+        ta.name as transfer_account_name,
         c.id as category_id, 
         c.name as category_name, 
         c.is_income as category_is_income,
@@ -457,6 +466,7 @@ app.get('/api/data', async (req, res) => {
       FROM v_transactions t
       LEFT JOIN accounts a ON t.account = a.id
       LEFT JOIN payees p ON t.payee = p.id
+      LEFT JOIN accounts ta ON p.transfer_acct = ta.id
       LEFT JOIN categories c ON t.category = c.id
       LEFT JOIN category_groups cg ON c.cat_group = cg.id
       WHERE t.tombstone = 0 
@@ -481,9 +491,10 @@ app.get('/api/data', async (req, res) => {
       amount_dollars: t.amount / 100.0, // Inflow positive, Outflow negative
       account: t.account,
       account_name: t.account_name || 'Unknown',
-      Payee_Name: t.payee_name || 'Unknown',
+      account_offbudget: Boolean(t.account_offbudget),
+      Payee_Name: t.transfer_account_name ? `Transfer: ${t.transfer_account_name}` : (t.payee_name || 'Unknown'),
       category: t.category_id,
-      Category_Name: t.category_name || 'Uncategorized',
+      Category_Name: t.transfer_account_name ? 'Account Transfer' : (t.category_name || 'Uncategorized'),
       is_income: Boolean(t.category_is_income),
       Group_Name: t.group_name || 'Other'
     }));
