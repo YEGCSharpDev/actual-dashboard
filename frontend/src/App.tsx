@@ -148,6 +148,7 @@ interface Transaction {
   amount_dollars: number; // Inflow positive, Outflow negative
   account: string;
   account_name: string;
+  account_offbudget: boolean;
   Payee_Name: string;
   category: string;
   Category_Name: string;
@@ -356,7 +357,7 @@ export default function App() {
   const { transactions, accounts, budgets, underbudget, config } = data;
 
   // Filter transactions for selected month
-  const dfFiltered = transactions.filter(t => t.date.substring(0, 7) === selectedMonth);
+  const dfFiltered = transactions.filter(t => t.date.substring(0, 7) === selectedMonth && !t.account_offbudget);
 
   // Split income/expense
   const dfIncome = dfFiltered.filter(t => t.is_income);
@@ -523,8 +524,8 @@ export default function App() {
   // TFSA YTD velocity chart calculations
   const buildTfsaYtdVelocityChart = (): ChartData<'line'> | null => {
     const tfsaCats = config.categories.tfsa_tracking;
-    // YTD expenses transactions for TFSA categories
-    const tfsaTxns = transactions.filter(t => !t.is_income && tfsaCats.includes(t.Category_Name));
+    // For YTD, filter from Jan 1 to selected month
+    const tfsaTxns = transactions.filter(t => !t.is_income && !t.account_offbudget && tfsaCats.includes(t.Category_Name));
     if (tfsaTxns.length === 0) return null;
 
     // Sort transactions by date
@@ -765,7 +766,7 @@ export default function App() {
 
   // TFSA YTD details
   const tfsaCats = config.categories.tfsa_tracking;
-  const dfYtdExpenses = transactions.filter(t => !t.is_income);
+  const dfYtdExpenses = transactions.filter(t => !t.is_income && !t.account_offbudget);
   const dfTfsa = dfYtdExpenses.filter(t => tfsaCats.includes(t.Category_Name));
   const tfsaTotal = dfTfsa.reduce((acc, t) => acc + t.amount, 0);
   const tfsaLimit = config.tfsa.ytd_limit;

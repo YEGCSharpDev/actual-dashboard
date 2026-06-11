@@ -449,6 +449,7 @@ app.get('/api/data', async (req, res) => {
         t.amount, 
         t.account, 
         a.name as account_name,
+        a.offbudget as account_offbudget,
         p.name as payee_name, 
         c.id as category_id, 
         c.name as category_name, 
@@ -481,6 +482,7 @@ app.get('/api/data', async (req, res) => {
       amount_dollars: t.amount / 100.0, // Inflow positive, Outflow negative
       account: t.account,
       account_name: t.account_name || 'Unknown',
+      account_offbudget: Boolean(t.account_offbudget),
       Payee_Name: t.payee_name || 'Unknown',
       category: t.category_id,
       Category_Name: t.category_name || 'Uncategorized',
