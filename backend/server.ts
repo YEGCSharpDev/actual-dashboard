@@ -428,9 +428,16 @@ app.get('/api/data', async (req, res) => {
     // Let's do a quick query to verify. Wait, we can also query the sum of transactions for that account.
     // But accounts table usually has a balance column, let's select accounts with balance.
     const rawAccounts = await queryLocalDb(`
-      SELECT id, name, offbudget, closed, balance_current
-      FROM accounts
-      WHERE tombstone = 0 AND closed = 0
+      SELECT 
+        a.id, 
+        a.name, 
+        a.offbudget, 
+        a.closed, 
+        COALESCE(SUM(t.amount), 0) as balance_current
+      FROM accounts a
+      LEFT JOIN v_transactions t ON a.id = t.account AND t.tombstone = 0 AND t.is_parent = 0
+      WHERE a.tombstone = 0 AND a.closed = 0
+      GROUP BY a.id, a.name, a.offbudget, a.closed
     `);
 
     const enrichedAccounts = rawAccounts.map(acc => ({
