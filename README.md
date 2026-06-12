@@ -64,4 +64,19 @@ Build and run the container locally:
 ```bash
 docker compose up -d --build
 ```
-Access the dashboard on port `8501`. A TrueNAS-specific configuration template is also available in [docker-compose.truenas.yml](file:///home/shanks/work/actual-dashboard/docker-compose.truenas.yml).
+Access the dashboard on port `8501`. A TrueNAS-specific configuration template is also available in docker-compose.truenas.yml
+
+### Screenshots
+
+<img width="3694" height="2097" alt="Screenshot_20260607_163626" src="https://github.com/user-attachments/assets/003049fd-2b9e-4a7c-97d1-4578682f7108" />
+
+<img width="3694" height="1067" alt="Screenshot_20260607_163906" src="https://github.com/user-attachments/assets/e0c59cad-472d-4443-a5f3-3d11c4ccc890" />
+
+<img width="1248" height="700" alt="Screenshot_20260607_164014" src="https://github.com/user-attachments/assets/712bc148-26aa-4d42-8d7a-d8baf155874c" />
+
+<img width="3694" height="1653" alt="Screenshot_20260607_164114" src="https://github.com/user-attachments/assets/d81c5aaa-c734-44e3-8934-3a632273fe90" />
+
+<img width="3694" height="1969" alt="Screenshot_20260607_164204" src="https://github.com/user-attachments/assets/4e92dad6-5488-499d-b2cc-e26d0a0639e6" />
+
+
+
