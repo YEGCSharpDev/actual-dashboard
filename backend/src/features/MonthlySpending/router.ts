@@ -23,25 +23,13 @@ const service = new MonthlySpendingService();
  *   3. Return a 200 OK JSON response containing the MonthlySpendingPayload.
  *   4. Handle and log database or calculation errors, returning a 500 status.
  */
-router.get('/', async (req: Request, res: Response) => {
+import { requireMonthParam } from '../../shared/middleware/validateMonth.js';
+import { asyncHandler } from '../../shared/middleware/errorHandler.js';
+
+router.get('/', requireMonthParam, asyncHandler(async (req: Request, res: Response) => {
   const month = req.query.month as string;
-
-  // Validate the format of the month parameter (must be YYYY-MM)
-  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-    return res.status(400).json({
-      error: "Query parameter 'month' in YYYY-MM format is required."
-    });
-  }
-
-  try {
-    const payload = await service.getMonthlySpending(month);
-    return res.json(payload);
-  } catch (err: any) {
-    console.error(`[Router - MonthlySpending] Failed to retrieve data for month ${month}:`, err);
-    return res.status(500).json({
-      error: err.message || "Failed to load monthly spending data"
-    });
-  }
-});
+  const payload = await service.getMonthlySpending(month);
+  res.json(payload);
+}));
 
 export { router as monthlySpendingRouter };

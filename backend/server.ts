@@ -289,6 +289,9 @@ Object.entries(featureRouters).forEach(([pathName, router]) => {
   app.use(apiPath, router);
 });
 
+import { globalErrorHandler } from './src/shared/middleware/errorHandler.js';
+app.use(globalErrorHandler);
+
 // Serve static frontend files in production
 const frontendDistPath = path.join(process.cwd(), 'frontend', 'dist');
 if (fs.existsSync(frontendDistPath)) {

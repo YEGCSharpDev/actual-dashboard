@@ -14,12 +14,9 @@ const service = new TFSAContributionsService();
  * GET /api/tfsa-contributions/ytd
  * Fetches YTD TFSA Contributions analytics and velocity chart data.
  */
-tfsaContributionsRouter.get('/ytd', async (req: Request, res: Response) => {
-  try {
-    const payload = await service.getYearToDateContributions();
-    res.json(payload);
-  } catch (error: any) {
-    console.error('[TFSA Contributions] Error fetching YTD data:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
-  }
-});
+import { asyncHandler } from '../../shared/middleware/errorHandler.js';
+
+tfsaContributionsRouter.get('/ytd', asyncHandler(async (req: Request, res: Response) => {
+  const payload = await service.getYearToDateContributions();
+  res.json(payload);
+}));

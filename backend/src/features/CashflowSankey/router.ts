@@ -16,17 +16,11 @@ const service = new CashflowSankeyService();
  * Query Params:
  * - month (required): YYYY-MM format.
  */
-cashflowSankeyRouter.get('/', async (req, res) => {
-  try {
-    const month = req.query.month as string;
-    if (!month) {
-      res.status(400).json({ error: 'month query parameter is required' });
-      return;
-    }
-    const data = await service.getSankeyData(month);
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching cashflow sankey payload:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+import { requireMonthParam } from '../../shared/middleware/validateMonth.js';
+import { asyncHandler } from '../../shared/middleware/errorHandler.js';
+
+cashflowSankeyRouter.get('/', requireMonthParam, asyncHandler(async (req, res) => {
+  const month = req.query.month as string;
+  const data = await service.getSankeyData(month);
+  res.json(data);
+}));
