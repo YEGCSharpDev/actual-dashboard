@@ -12,7 +12,7 @@ import {
 } from 'chart.js';
 import type { ChartData } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { Sankey } from './Sankey';
+import { MonthlySpendingOverview, MonthlyCashflowSankey } from './features/MonthlySpending/ui';
 
 ChartJS.register(
   CategoryScale,
@@ -33,104 +33,7 @@ ChartJS.defaults.scale.ticks.color = '#cbd5e1';
 ChartJS.defaults.scale.grid.color = 'rgba(255, 255, 255, 0.05)';
 
 
-// Math expression parser
-function parseMathInput(exprStr: string): number {
-  if (!exprStr || !exprStr.trim()) return 0;
-  
-  const clean = exprStr.replace(/\s+/g, '');
-  if (!/^[0-9+\-*/().]+$/.test(clean)) {
-    return 0;
-  }
 
-  try {
-    return evaluateSimpleExpression(clean);
-  } catch (e) {
-    return 0;
-  }
-}
-
-function evaluateSimpleExpression(expr: string): number {
-  const tokens: string[] = [];
-  let numAccum = '';
-  
-  for (let i = 0; i < expr.length; i++) {
-    const char = expr[i];
-    if (/[0-9.]/.test(char)) {
-      numAccum += char;
-    } else {
-      if (numAccum) {
-        tokens.push(numAccum);
-        numAccum = '';
-      }
-      tokens.push(char);
-    }
-  }
-  if (numAccum) {
-    tokens.push(numAccum);
-  }
-
-  const parseNoParens = (toks: string[]): number => {
-    const intermediate: (number | string)[] = [];
-    let i = 0;
-    while (i < toks.length) {
-      const tok = toks[i];
-      if (tok === '*' || tok === '/') {
-        const left = Number(intermediate.pop());
-        const right = Number(toks[i + 1]);
-        if (tok === '*') {
-          intermediate.push(left * right);
-        } else {
-          intermediate.push(left / right);
-        }
-        i += 2;
-      } else {
-        intermediate.push(isNaN(Number(tok)) ? tok : Number(tok));
-        i++;
-      }
-    }
-
-    if (intermediate.length === 0) return 0;
-    let res = Number(intermediate[0]);
-    let j = 1;
-    while (j < intermediate.length) {
-      const op = intermediate[j];
-      const val = Number(intermediate[j + 1]);
-      if (op === '+') {
-        res += val;
-      } else if (op === '-') {
-        res -= val;
-      }
-      j += 2;
-    }
-    return res;
-  };
-
-  let hasParens = tokens.includes('(');
-  let limit = 100;
-  while (hasParens && limit > 0) {
-    limit--;
-    let openIdx = -1;
-    let closeIdx = -1;
-    for (let i = 0; i < tokens.length; i++) {
-      if (tokens[i] === '(') {
-        openIdx = i;
-      } else if (tokens[i] === ')') {
-        closeIdx = i;
-        break;
-      }
-    }
-    if (openIdx !== -1 && closeIdx !== -1) {
-      const subExpression = tokens.slice(openIdx + 1, closeIdx);
-      const val = parseNoParens(subExpression);
-      tokens.splice(openIdx, closeIdx - openIdx + 1, val.toString());
-    } else {
-      break;
-    }
-    hasParens = tokens.includes('(');
-  }
-
-  return parseNoParens(tokens);
-}
 
 // Interfaces for API response
 interface Account {
@@ -213,10 +116,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{ isSyncing: boolean; lastSyncTime: string | null; syncError: string | null } | null>(null);
 
-  // User input states
-  const [addInc, setAddInc] = useState<string>('0');
-  const [addExp, setAddExp] = useState<string>('0');
-  
   // Return rate sliders
   const [respReturnPct, setRespReturnPct] = useState<number>(0);
   const [rrspReturnPct, setRrspReturnPct] = useState<number>(0);
@@ -359,29 +258,8 @@ export default function App() {
   // Filter transactions for selected month
   const dfFiltered = transactions.filter(t => t.date.substring(0, 7) === selectedMonth && !t.account_offbudget);
 
-  // Split income/expense
-  const dfIncome = dfFiltered.filter(t => t.is_income);
+  // Split income/expense (dfExpenses is used in Envelope Health & Transaction Log)
   const dfExpenses = dfFiltered.filter(t => !t.is_income);
-
-  // Totals
-  // Income amounts are negative in database representation of outflows, so we sum them and flip sign
-  const totalIncome = dfIncome.reduce((acc, t) => acc + (t.amount * -1), 0);
-  const totalSpent = dfExpenses.reduce((acc, t) => acc + t.amount, 0);
-  const netIncome = totalIncome - totalSpent;
-
-  // Expected values
-  const expectedIncome = totalIncome + parseMathInput(addInc);
-  const expectedExpenses = totalSpent + parseMathInput(addExp);
-  const forecastNet = expectedIncome - expectedExpenses;
-
-  // Savings rates
-  const savingsRate = totalIncome > 0 ? (netIncome / totalIncome) * 100 : 0;
-  const expectedSavingsRate = expectedIncome > 0 ? (forecastNet / expectedIncome) * 100 : 0;
-
-  // Progress bar percentages
-  const maxExpected = Math.max(expectedIncome, expectedExpenses, 1.0);
-  const incPct = Math.min((totalIncome / maxExpected) * 100, 100.0);
-  const expPct = Math.min((totalSpent / maxExpected) * 100, 100.0);
 
   // Future Envelope months mapping
   const targetMonthsArr: { label: string; key: string }[] = [];
@@ -847,92 +725,7 @@ export default function App() {
 
       {activePage === 'dashboard' && (
         <>
-          {/* 1. Monthly Overview Grid */}
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Overview</h2>
-          <div className="grid-cols-4">
-            {/* Actual Income */}
-            <div className="card metric-card">
-              <span className="metric-label">
-                Actual Income
-                <span className="info-bubble" data-tooltip="Enter any additional expected income for the month (supports expressions like 500+200)">ⓘ</span>
-              </span>
-              <span className="metric-value">${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <input
-                type="text"
-                className="metric-input"
-                placeholder="Forecasted Income (e.g. 500+200)"
-                value={addInc}
-                onChange={e => setAddInc(e.target.value)}
-              />
-            </div>
-
-            {/* Actual Expenses */}
-            <div className="card metric-card">
-              <span className="metric-label">
-                Actual Expenses
-                <span className="info-bubble" data-tooltip="Enter any additional expected expenses for the month (supports expressions like 100+50)">ⓘ</span>
-              </span>
-              <span className="metric-value">${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <input
-                type="text"
-                className="metric-input"
-                placeholder="Forecasted Expense (e.g. 100+50)"
-                value={addExp}
-                onChange={e => setAddExp(e.target.value)}
-              />
-            </div>
-
-            {/* Actual Net */}
-            <div className="card metric-card">
-              <span className="metric-label">Actual Net</span>
-              <span className="metric-value" style={{ color: netIncome >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className={`metric-delta ${netIncome >= 0 ? 'delta-success' : 'delta-danger'}`}>
-                {totalIncome > 0 ? `${savingsRate.toFixed(1)}% savings rate` : ''}
-              </span>
-            </div>
-
-            {/* Expected Net */}
-            <div className="card metric-card">
-              <span className="metric-label">Expected Net</span>
-              <span className="metric-value" style={{ color: forecastNet >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                ${forecastNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className={`metric-delta ${forecastNet >= 0 ? 'delta-success' : 'delta-danger'}`}>
-                {expectedIncome > 0 ? `${expectedSavingsRate.toFixed(1)}% expected savings` : ''}
-              </span>
-            </div>
-          </div>
-
-          {/* 2. Progress Bars */}
-          <div className="card" style={{ marginBottom: '2rem' }}>
-            {/* Income Progress Bar */}
-            <div className="progress-bar-wrapper">
-              <div className="progress-bar-header" style={{ color: 'var(--color-success)' }}>
-                <span>Income</span>
-                <span>Target: ${Math.round(expectedIncome).toLocaleString()}</span>
-              </div>
-              <div className="progress-bar-track" style={{ borderColor: 'var(--color-success-border)', backgroundColor: 'rgba(16, 185, 129, 0.05)' }}>
-                <div className="progress-bar-fill" style={{ width: `${incPct}%`, backgroundColor: 'var(--color-success)' }}>
-                  <span className="progress-bar-amount">${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Expenses Progress Bar */}
-            <div className="progress-bar-wrapper" style={{ marginBottom: 0 }}>
-              <div className="progress-bar-header" style={{ color: 'var(--color-danger)' }}>
-                <span>Expenses</span>
-                <span>Target: ${Math.round(expectedExpenses).toLocaleString()}</span>
-              </div>
-              <div className="progress-bar-track" style={{ borderColor: 'var(--color-danger-border)', backgroundColor: 'rgba(244, 63, 94, 0.05)' }}>
-                <div className="progress-bar-fill" style={{ width: `${expPct}%`, backgroundColor: 'var(--color-danger)' }}>
-                  <span className="progress-bar-amount">${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <MonthlySpendingOverview selectedMonth={selectedMonth} lastSyncTime={syncStatus?.lastSyncTime || null} />
 
           {/* 3. Envelope Health Checks */}
           <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Future Envelope Health</h2>
@@ -1001,26 +794,7 @@ export default function App() {
             </>
           )}
 
-          {/* 5. Sankey Diagram */}
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Cashflow</h2>
-          <div className="card" style={{ marginBottom: '2rem' }}>
-            {/* Summarize categories */}
-            {(() => {
-              const incSummary: Record<string, number> = {};
-              dfIncome.forEach(t => {
-                incSummary[t.Category_Name] = (incSummary[t.Category_Name] || 0) + (t.amount * -1);
-              });
-              const expSummary: Record<string, number> = {};
-              dfExpenses.forEach(t => {
-                expSummary[t.Category_Name] = (expSummary[t.Category_Name] || 0) + t.amount;
-              });
-
-              const incArray = Object.entries(incSummary).map(([Category_Name, amount]) => ({ Category_Name, amount }));
-              const expArray = Object.entries(expSummary).map(([Category_Name, amount]) => ({ Category_Name, amount }));
-
-              return <Sankey income={incArray} expenses={expArray} />;
-            })()}
-          </div>
+          <MonthlyCashflowSankey selectedMonth={selectedMonth} lastSyncTime={syncStatus?.lastSyncTime || null} />
 
           {/* 6. Transaction Log */}
           <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Transaction Log</h2>

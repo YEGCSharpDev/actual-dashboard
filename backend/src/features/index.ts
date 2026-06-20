@@ -20,6 +20,7 @@
  */
 
 import { Router } from 'express';
+import { monthlySpendingRouter } from './MonthlySpending/router';
 
 // Feature routers will be imported and registered here as we refactor each horizontal concern.
 
@@ -29,5 +30,5 @@ import { Router } from 'express';
  * be prefixed under `/api` (e.g., `/api/monthly-spending`).
  */
 export const featureRouters: Record<string, Router> = {
-  // Feature router registrations will go here during refactoring phases.
+  '/monthly-spending': monthlySpendingRouter,
 };

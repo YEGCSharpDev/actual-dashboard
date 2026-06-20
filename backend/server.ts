@@ -60,7 +60,7 @@ function getDbPath(): string {
 }
 
 // Run a read-only query against local SQLite DB
-function queryLocalDb<T = any>(query: string, params: any[] = []): Promise<T[]> {
+export function queryLocalDb<T = any>(query: string, params: any[] = []): Promise<T[]> {
   return new Promise((resolve, reject) => {
     try {
       const dbFile = getDbPath();
