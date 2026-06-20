@@ -110,10 +110,10 @@ export class InvestmentProjectionsService {
 
       const upperName = name.toUpperCase();
       const catchupWords = catchupMatch.split(/\s+/).filter(w => w && w !== 'TFSA');
-      const isCatchup = upperName.includes(catchupMatch) || 
-                        upperName.includes("WEALTHSIMPLE") ||
-                        (catchupWords.length > 0 && catchupWords.every(word => upperName.includes(word)));
-                        
+      const isCatchup = catchupMatch !== '' && (
+        upperName.includes(catchupMatch) || 
+        (catchupWords.length > 0 && catchupWords.every(word => upperName.includes(word)))
+      );
       const rate = isCatchup ? (config.catchup.defaultReturnPct / 100.0) : (config.base.defaultReturnPct / 100.0);
 
       for (let yearOffset = 0; yearOffset <= config.horizonYears; yearOffset++) {
