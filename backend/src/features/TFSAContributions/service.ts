@@ -6,8 +6,9 @@
 
 import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
 import { defaultDbClient } from '../../../db.js';
-import type { TFSAYearToDateResponse, TFSAChartData, TFSAChartDataset } from '@shared/types/TFSAContributions';
+import type { TFSAYearToDateResponse, TFSAChartData, TFSAChartDataset } from '@shared/types/TFSAContributions.js';
 import { investmentConfig } from '../../../../shared/config/env.js';
+import { CENTS_TO_DOLLARS_OUTFLOW_POSITIVE } from '../../../../shared/constants/financial.js';
 
 export class TFSAContributionsService {
   constructor(private db: IDbClient = defaultDbClient) {}
@@ -56,8 +57,6 @@ export class TFSAContributionsService {
         AND t.date >= ?
     `, [startDate]);
 
-    const CENTS_DIVISOR = -100.0; // Outflow positive
-    
     const formatDate = (rawDate: any): string => {
       if (!rawDate) return '';
       const str = String(rawDate);
@@ -72,7 +71,7 @@ export class TFSAContributionsService {
       .filter((t: any) => !t.category_is_income && !t.account_offbudget && tfsaCats.includes(t.category_name))
       .map((t: any) => ({
         date: formatDate(t.date),
-        amount: t.amount / CENTS_DIVISOR,
+        amount: t.amount / CENTS_TO_DOLLARS_OUTFLOW_POSITIVE,
         category: t.category_name
       }));
 

@@ -1,6 +1,8 @@
 import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
 import type { MonthlySpendingPayload, SpendingCategorySummary } from '@shared/types/MonthlySpending';
 
+import { CENTS_TO_DOLLARS_OUTFLOW_POSITIVE } from '../../../../shared/constants/financial.js';
+
 /**
  * Retrieves aggregated monthly spending and income analytics for a given month.
  * Filters out transactions on off-budget accounts.
@@ -33,8 +35,6 @@ export async function getMonthlySpending(db: IDbClient, selectedMonth: string): 
       AND t.date LIKE ?
   `, [`${queryMonthSql}%`]);
 
-  const CENTS_DIVISOR = -100.0;
-
   const incomeSummary: Record<string, number> = {};
   const expenseSummary: Record<string, number> = {};
 
@@ -42,7 +42,7 @@ export async function getMonthlySpending(db: IDbClient, selectedMonth: string): 
   let totalSpent = 0;
 
   for (const t of rawTransactions) {
-    const amount = t.amount / CENTS_DIVISOR;
+    const amount = t.amount / CENTS_TO_DOLLARS_OUTFLOW_POSITIVE;
 
     const categoryName = t.transfer_account_name
       ? 'Account Transfer'
@@ -80,7 +80,7 @@ export async function getMonthlySpending(db: IDbClient, selectedMonth: string): 
     return {
       id: t.id,
       date: dateStr,
-      amount: t.amount / CENTS_DIVISOR,
+      amount: t.amount / CENTS_TO_DOLLARS_OUTFLOW_POSITIVE,
       Payee_Name: t.transfer_account_name ? `Transfer: ${t.transfer_account_name}` : (t.payee_name || 'Unknown'),
       Category_Name: t.transfer_account_name ? 'Account Transfer' : (t.category_name || 'Uncategorized'),
       is_income: Boolean(t.category_is_income)
