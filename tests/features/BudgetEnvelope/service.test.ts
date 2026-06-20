@@ -16,18 +16,16 @@ describe('BudgetEnvelope Service', () => {
   describe('getEnvelopeHealth', () => {
     it('should calculate underfunded amounts for the current and two future months', async () => {
       const queryMock = mockDbClient.query as any;
-      queryMock
-        .mockResolvedValueOnce([{ underfunded: 50.50 }])
-        .mockResolvedValueOnce([{ underfunded: 0 }])
-        .mockResolvedValueOnce([{ underfunded: 100.00 }]);
+      queryMock.mockResolvedValueOnce([
+        { month: '202406', underfunded: 50.50 },
+        { month: '202408', underfunded: 100.00 }
+      ]);
 
       const selectedMonth = '2024-06';
       const result = await service.getEnvelopeHealth(selectedMonth);
 
-      expect(queryMock).toHaveBeenCalledTimes(3);
-      expect(queryMock).toHaveBeenNthCalledWith(1, expect.any(String), ['202406']);
-      expect(queryMock).toHaveBeenNthCalledWith(2, expect.any(String), ['202407']);
-      expect(queryMock).toHaveBeenNthCalledWith(3, expect.any(String), ['202408']);
+      expect(queryMock).toHaveBeenCalledTimes(1);
+      expect(queryMock).toHaveBeenCalledWith(expect.any(String), ['202406', '202407', '202408']);
 
       expect(result).toHaveLength(3);
       expect(result[0]).toEqual({
@@ -52,15 +50,13 @@ describe('BudgetEnvelope Service', () => {
 
     it('should handle December to January rollover correctly', async () => {
       const queryMock = mockDbClient.query as any;
-      queryMock.mockResolvedValue([{ underfunded: 10.00 }]);
+      queryMock.mockResolvedValue([{ month: '202412', underfunded: 10.00 }]);
 
       const selectedMonth = '2024-12';
       const result = await service.getEnvelopeHealth(selectedMonth);
 
-      expect(queryMock).toHaveBeenCalledTimes(3);
-      expect(queryMock).toHaveBeenNthCalledWith(1, expect.any(String), ['202412']);
-      expect(queryMock).toHaveBeenNthCalledWith(2, expect.any(String), ['202501']);
-      expect(queryMock).toHaveBeenNthCalledWith(3, expect.any(String), ['202502']);
+      expect(queryMock).toHaveBeenCalledTimes(1);
+      expect(queryMock).toHaveBeenCalledWith(expect.any(String), ['202412', '202501', '202502']);
 
       expect(result[0].month).toBe('202412');
       expect(result[1].month).toBe('202501');
