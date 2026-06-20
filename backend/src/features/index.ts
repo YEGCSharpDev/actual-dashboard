@@ -19,10 +19,13 @@
  * ```
  */
 
+
 import { Router } from 'express';
 import { monthlySpendingRouter } from './MonthlySpending/router.js';
 import { cashflowSankeyRouter } from './CashflowSankey/router.js';
 import { budgetEnvelopeRouter } from './BudgetEnvelope/router.js';
+import { tfsaContributionsRouter } from './TFSAContributions/router.js';
+import { investmentProjectionsRouter } from './InvestmentProjections/router.js';
 
 // Feature routers will be imported and registered here as we refactor each horizontal concern.
 
@@ -35,4 +38,6 @@ export const featureRouters: Record<string, Router> = {
   '/monthly-spending': monthlySpendingRouter,
   '/cashflow-sankey': cashflowSankeyRouter,
   '/budget-envelope': budgetEnvelopeRouter,
+  '/tfsa-contributions': tfsaContributionsRouter,
+  '/investment-projections': investmentProjectionsRouter,
 };

@@ -1,3 +1,9 @@
+/**
+ * @file backend/server.ts
+ * @description Main server entry point for the Actual Budget Dashboard API.
+ * Initializes the connection to the Actual API, runs database syncs, and exposes 
+ * global routes (like backups and monolithic legacy queries) alongside modular Vertical Slice routers.
+ */
 import './navigator-polyfill';
 import express from 'express';
 import cors from 'cors';
@@ -8,6 +14,8 @@ import sqlite3 from 'sqlite3';
 // @ts-ignore
 import api from '@actual-app/api';
 import AdmZip from 'adm-zip';
+
+import { parseMathInput } from '../shared/features/SafeMath/index.js';
 import { featureRouters } from './src/features/index';
 
 dotenv.config();
@@ -226,104 +234,7 @@ function startBackupScheduler() {
 }
 
 // Math expression evaluator (safe)
-export function parseMathInput(exprStr: string): number {
-  if (!exprStr || !exprStr.trim()) return 0;
-  
-  const clean = exprStr.replace(/\s+/g, '');
-  if (!/^[0-9+\-*/().]+$/.test(clean)) {
-    return 0;
-  }
 
-  try {
-    const result = evaluateSimpleExpression(clean);
-    return isNaN(result) ? 0 : result;
-  } catch (e) {
-    return 0;
-  }
-}
-
-function evaluateSimpleExpression(expr: string): number {
-  const tokens: string[] = [];
-  let numAccum = '';
-  
-  for (let i = 0; i < expr.length; i++) {
-    const char = expr[i];
-    if (/[0-9.]/.test(char)) {
-      numAccum += char;
-    } else {
-      if (numAccum) {
-        tokens.push(numAccum);
-        numAccum = '';
-      }
-      tokens.push(char);
-    }
-  }
-  if (numAccum) {
-    tokens.push(numAccum);
-  }
-
-  const parseNoParens = (toks: string[]): number => {
-    const intermediate: (number | string)[] = [];
-    let i = 0;
-    while (i < toks.length) {
-      const tok = toks[i];
-      if (tok === '*' || tok === '/') {
-        const left = Number(intermediate.pop());
-        const right = Number(toks[i + 1]);
-        if (tok === '*') {
-          intermediate.push(left * right);
-        } else {
-          intermediate.push(left / right);
-        }
-        i += 2;
-      } else {
-        intermediate.push(isNaN(Number(tok)) ? tok : Number(tok));
-        i++;
-      }
-    }
-
-    if (intermediate.length === 0) return 0;
-    let res = Number(intermediate[0]);
-    let j = 1;
-    while (j < intermediate.length) {
-      const op = intermediate[j];
-      const val = Number(intermediate[j + 1]);
-      if (op === '+') {
-        res += val;
-      } else if (op === '-') {
-        res -= val;
-      }
-      j += 2;
-    }
-    return res;
-  };
-
-  let hasParens = tokens.includes('(');
-  let limit = 100;
-  while (hasParens && limit > 0) {
-    limit--;
-    let openIdx = -1;
-    let closeIdx = -1;
-    for (let i = 0; i < tokens.length; i++) {
-      if (tokens[i] === '(') {
-        openIdx = i;
-      } else if (tokens[i] === ')') {
-        closeIdx = i;
-        break;
-      }
-    }
-    if (openIdx !== -1 && closeIdx !== -1) {
-      const subExpression = tokens.slice(openIdx + 1, closeIdx);
-      const val = parseNoParens(subExpression);
-      tokens.splice(openIdx, closeIdx - openIdx + 1, val.toString());
-    } else {
-      break;
-    }
-    hasParens = tokens.includes('(');
-  }
-
-  return parseNoParens(tokens);
-}
 
 // API Routes
 app.get('/api/status', (req, res) => {

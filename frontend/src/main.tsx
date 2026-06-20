@@ -1,3 +1,7 @@
+/**
+ * @file frontend/src/main.tsx
+ * @description React application bootstrap entry point.
+ */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
