@@ -6,15 +6,13 @@
  * This service computes absolute coordinates for the nodes and SVG paths for the links.
  */
 
-import { MonthlySpendingService } from '../MonthlySpending/service.js';
 import type { CashflowSankeyPayload, SankeyNode, SankeyLink } from '@shared/types/CashflowSankey';
+import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
+import { defaultDbClient } from '../../../db.js';
+import { getMonthlySpending } from '../../shared/queries/getMonthlySpending.js';
 
 export class CashflowSankeyService {
-  private monthlyService: MonthlySpendingService;
-
-  constructor() {
-    this.monthlyService = new MonthlySpendingService();
-  }
+  constructor(private db: IDbClient = defaultDbClient) {}
 
   /**
    * Generates nodes and links for the Sankey diagram based on monthly spending data.
@@ -24,7 +22,7 @@ export class CashflowSankeyService {
    * @returns A promise resolving to the Sankey visualization payload (nodes and links).
    */
   public async getSankeyData(selectedMonth: string): Promise<CashflowSankeyPayload> {
-    const data = await this.monthlyService.getMonthlySpending(selectedMonth);
+    const data = await getMonthlySpending(this.db, selectedMonth);
 
     // We calculate the layout on a fixed 900x600 canvas.
     // The frontend can scale this inherently using SVG viewBox and preserveAspectRatio.
