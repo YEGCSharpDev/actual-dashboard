@@ -1,12 +1,11 @@
 /**
  * @file frontend/src/features/MonthlySpending/ui.tsx
  * @description React UI components for the Monthly Spending Analytics vertical slice.
- * Exports MonthlySpendingOverview (metrics & progress bars) and MonthlyCashflowSankey (Sankey chart).
+ * Exports MonthlySpendingOverview (metrics & progress bars).
  */
 
 import React, { useState, useEffect } from 'react';
 import { useMonthlySpending } from './api';
-import { Sankey } from '../../Sankey';
 
 /**
  * Props for the Monthly Spending components.
@@ -270,45 +269,3 @@ export const MonthlySpendingOverview: React.FC<MonthlySpendingProps> = ({
   );
 };
 
-/**
- * Component for rendering the Monthly Cashflow Sankey diagram card.
- */
-export const MonthlyCashflowSankey: React.FC<MonthlySpendingProps> = ({
-  selectedMonth,
-  lastSyncTime
-}) => {
-  const { data, loading, error, refetch } = useMonthlySpending(selectedMonth);
-
-  useEffect(() => {
-    refetch();
-  }, [lastSyncTime, refetch]);
-
-  if (loading && !data) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '4rem 0', flexDirection: 'column', gap: '0.75rem' }}>
-        <div style={{ width: '24px', height: '24px', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-        <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>Loading cashflow chart...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="card" style={{ borderColor: 'var(--color-danger-border)', padding: '1.5rem', textAlign: 'center', marginBottom: '2rem' }}>
-        <p style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: '0.9rem' }}>Failed to load Cashflow Chart</p>
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{error}</p>
-      </div>
-    );
-  }
-
-  if (!data) return null;
-
-  return (
-    <>
-      <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Cashflow</h2>
-      <div className="card" style={{ marginBottom: '2rem' }}>
-        <Sankey income={data.income} expenses={data.expenses} />
-      </div>
-    </>
-  );
-};

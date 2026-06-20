@@ -20,7 +20,8 @@
  */
 
 import { Router } from 'express';
-import { monthlySpendingRouter } from './MonthlySpending/router';
+import { monthlySpendingRouter } from './MonthlySpending/router.js';
+import { cashflowSankeyRouter } from './CashflowSankey/router.js';
 
 // Feature routers will be imported and registered here as we refactor each horizontal concern.
 
@@ -31,4 +32,5 @@ import { monthlySpendingRouter } from './MonthlySpending/router';
  */
 export const featureRouters: Record<string, Router> = {
   '/monthly-spending': monthlySpendingRouter,
+  '/cashflow-sankey': cashflowSankeyRouter,
 };

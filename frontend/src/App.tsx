@@ -12,7 +12,8 @@ import {
 } from 'chart.js';
 import type { ChartData } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { MonthlySpendingOverview, MonthlyCashflowSankey } from './features/MonthlySpending/ui';
+import { MonthlySpendingOverview } from './features/MonthlySpending/ui';
+import { MonthlyCashflowSankey } from './features/CashflowSankey/ui';
 
 ChartJS.register(
   CategoryScale,
