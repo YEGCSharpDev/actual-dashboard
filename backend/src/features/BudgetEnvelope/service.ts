@@ -38,7 +38,7 @@ export class BudgetEnvelopeService {
     GROUP BY month
   `, targetMonths);
 
-  const healthMap = new Map(rows.map((r: any) => [r.month, r.underfunded]));
+  const healthMap = new Map(rows.map((r: any) => [String(r.month), r.underfunded]));
 
   const healthData: EnvelopeHealth[] = targetMonths.map(mStr => ({
     month: mStr,
