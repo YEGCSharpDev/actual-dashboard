@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMathInput } from '../backend/server';
+import { parseMathInput } from '../shared/features/SafeMath/index';
 
 describe('Safe Math Input Parser', () => {
   it('should parse simple arithmetic expressions', () => {
