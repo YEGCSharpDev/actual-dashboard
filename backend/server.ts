@@ -28,15 +28,15 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.ACTUAL_DATA_DIR || path.join(process.cwd(), '.actual-data');
 
-let isSyncing = false;
-let syncError: string | null = null;
-let lastSyncTime: Date | null = null;
+const syncState = {
+  syncPromise: null as Promise<void> | null,
+  syncError: null as string | null,
+  lastSyncTime: null as Date | null,
+};
 
 // Actual Sync logic
-async function doSync() {
-  if (isSyncing) return;
-  isSyncing = true;
-  syncError = null;
+async function _doSyncInternal(): Promise<void> {
+  syncState.syncError = null;
 
   const serverUrl = process.env.ACTUAL_SERVER_URL;
   const password = process.env.ACTUAL_PASSWORD;
@@ -44,9 +44,8 @@ async function doSync() {
   const encryptionPassword = process.env.ACTUAL_ENCRYPTION_PASSWORD;
 
   if (!serverUrl || !password || !syncId) {
-    syncError = "Missing ACTUAL_SERVER_URL, ACTUAL_PASSWORD, or ACTUAL_SYNC_ID env variables";
-    console.error(syncError);
-    isSyncing = false;
+    syncState.syncError = "Missing ACTUAL_SERVER_URL, ACTUAL_PASSWORD, or ACTUAL_SYNC_ID env variables";
+    console.error(syncState.syncError);
     return;
   }
 
@@ -72,18 +71,24 @@ async function doSync() {
 
     await api.shutdown();
     
-    lastSyncTime = new Date();
+    syncState.lastSyncTime = new Date();
     resetDbConnection(); // Invalidate cache and connections in case path changed
     console.log("Sync completed successfully!");
   } catch (err: any) {
-    syncError = err.message || String(err);
-    console.error("Sync failed:", syncError);
+    syncState.syncError = err.message || String(err);
+    console.error("Sync failed:", syncState.syncError);
     try {
       await api.shutdown();
     } catch (e) {}
-  } finally {
-    isSyncing = false;
   }
+}
+
+export function doSync(): Promise<void> {
+  if (syncState.syncPromise) return syncState.syncPromise;
+  syncState.syncPromise = _doSyncInternal().finally(() => { 
+    syncState.syncPromise = null; 
+  });
+  return syncState.syncPromise;
 }
 
 // Start periodic sync (every 15 minutes)
@@ -186,21 +191,21 @@ function startBackupScheduler() {
 // API Routes
 app.get('/api/status', (req, res) => {
   res.json({
-    isSyncing,
-    syncError,
-    lastSyncTime: lastSyncTime ? lastSyncTime.toISOString() : null,
+    isSyncing: !!syncState.syncPromise,
+    syncError: syncState.syncError,
+    lastSyncTime: syncState.lastSyncTime ? syncState.lastSyncTime.toISOString() : null,
   });
 });
 
 app.post('/api/sync', async (req, res) => {
-  if (isSyncing) {
+  if (syncState.syncPromise) {
     return res.status(409).json({ error: "Sync is already in progress" });
   }
   await doSync();
-  if (syncError) {
-    res.status(500).json({ error: syncError });
+  if (syncState.syncError) {
+    res.status(500).json({ error: syncState.syncError });
   } else {
-    res.json({ success: true, lastSyncTime });
+    res.json({ success: true, lastSyncTime: syncState.lastSyncTime });
   }
 });
 
