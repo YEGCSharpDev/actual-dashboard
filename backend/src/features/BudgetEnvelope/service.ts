@@ -69,3 +69,26 @@ export async function getEnvelopeHealth(selectedMonth: string): Promise<Envelope
 
   return healthData;
 }
+
+/**
+ * Retrieves the budgeted amounts for each category in the given month.
+ * 
+ * @param selectedMonth - The current selected month in YYYY-MM format.
+ * @returns A promise resolving to a record mapping category names to their budgeted amounts.
+ */
+export async function getBudgets(selectedMonth: string): Promise<Record<string, number>> {
+  const queryMonthSql = selectedMonth.replace('-', '');
+  const budgetsRaw = await queryLocalDb(`
+    SELECT c.name, COALESCE(zb.amount, 0) / 100.0 as budgeted
+    FROM zero_budgets zb
+    INNER JOIN categories c ON c.id = zb.category
+    WHERE zb.month = ?
+  `, [queryMonthSql]);
+
+  const budgets: Record<string, number> = {};
+  budgetsRaw.forEach((b: any) => {
+    budgets[b.name] = b.budgeted;
+  });
+
+  return budgets;
+}

@@ -32,6 +32,7 @@ export class MonthlySpendingService {
         t.date, 
         t.amount, 
         a.offbudget as account_offbudget,
+        p.name as payee_name,
         ta.name as transfer_account_name,
         c.name as category_name, 
         c.is_income as category_is_income
@@ -96,13 +97,30 @@ export class MonthlySpendingService {
     const netIncome = totalIncome - totalSpent;
     const savingsRate = totalIncome > 0 ? (netIncome / totalIncome) * 100 : 0;
 
+    const transactions = rawTransactions.map(t => {
+      const rawDate = String(t.date);
+      const dateStr = rawDate.length === 8 
+        ? `${rawDate.substring(0, 4)}-${rawDate.substring(4, 6)}-${rawDate.substring(6, 8)}`
+        : rawDate;
+        
+      return {
+        id: t.id,
+        date: dateStr,
+        amount: t.amount / CENTS_DIVISOR,
+        Payee_Name: t.transfer_account_name ? `Transfer: ${t.transfer_account_name}` : (t.payee_name || 'Unknown'),
+        Category_Name: t.transfer_account_name ? 'Account Transfer' : (t.category_name || 'Uncategorized'),
+        is_income: Boolean(t.category_is_income)
+      };
+    });
+
     return {
       income,
       expenses,
       totalIncome,
       totalSpent,
       netIncome,
-      savingsRate
+      savingsRate,
+      transactions
     };
   }
 }

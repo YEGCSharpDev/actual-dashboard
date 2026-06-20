@@ -142,7 +142,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/data?month=${month}`);
+      const res = await fetch(`${API_BASE_URL}/api/dashboard?month=${month}`);
       const json = await res.json();
       if (json.error) {
         setError(json.error);

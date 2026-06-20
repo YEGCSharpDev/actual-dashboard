@@ -21,6 +21,8 @@ export interface SpendingCategorySummary {
  * Groups categorized aggregates of income and expense flows.
  */
 export interface MonthlySpendingPayload {
+  /** List of transactions for the month */
+  transactions?: any[];
   /** Aggregated income transactions grouped by category */
   income: SpendingCategorySummary[];
   /** Aggregated expense transactions grouped by category */
