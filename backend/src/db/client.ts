@@ -27,39 +27,38 @@ export function getDbPath(): string {
   // We perform a shallow scan and match against metadata.json's groupId to guarantee correctness
   // without recursively scanning huge backup directories.
   
-  if (fs.existsSync(path.join(DATA_DIR, 'db.sqlite'))) {
-    foundPath = path.join(DATA_DIR, 'db.sqlite');
-  }
-
-  if (!foundPath) {
-    const files = fs.readdirSync(DATA_DIR);
-    for (const file of files) {
-      if (file === 'budget-backup') continue;
+  const files = fs.readdirSync(DATA_DIR);
+  for (const file of files) {
+    if (file === 'budget-backup') continue;
+    
+    const fullDir = path.join(DATA_DIR, file);
+    if (fs.statSync(fullDir).isDirectory()) {
+      const potentialDb = path.join(fullDir, 'db.sqlite');
+      const metadataPath = path.join(fullDir, 'metadata.json');
       
-      const fullDir = path.join(DATA_DIR, file);
-      if (fs.statSync(fullDir).isDirectory()) {
-        const potentialDb = path.join(fullDir, 'db.sqlite');
-        const metadataPath = path.join(fullDir, 'metadata.json');
-        
-        if (fs.existsSync(potentialDb)) {
-          if (syncId && fs.existsSync(metadataPath)) {
-            try {
-              const meta = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-              if (meta.groupId === syncId) {
-                foundPath = potentialDb;
-                break;
-              }
-            } catch (e) {
-              // Ignore invalid metadata
+      if (fs.existsSync(potentialDb)) {
+        if (syncId && fs.existsSync(metadataPath)) {
+          try {
+            const meta = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+            if (meta.groupId === syncId) {
+              foundPath = potentialDb;
+              break;
             }
-          } else {
-            // Fallback if no syncId or metadata
-            foundPath = potentialDb;
-            break;
+          } catch (e) {
+            // Ignore invalid metadata
           }
+        } else if (!syncId) {
+          // Fallback if no syncId configured
+          foundPath = potentialDb;
+          break;
         }
       }
     }
+  }
+
+  // Fallback to legacy root db.sqlite if no syncId-matched folder was found
+  if (!foundPath && fs.existsSync(path.join(DATA_DIR, 'db.sqlite'))) {
+    foundPath = path.join(DATA_DIR, 'db.sqlite');
   }
 
   const t1 = performance.now();
