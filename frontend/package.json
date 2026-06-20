@@ -10,7 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "adm-zip": "^0.5.17",
     "chart.js": "^4.5.1",
     "react": "^19.2.6",
     "react-chartjs-2": "^5.3.1",
