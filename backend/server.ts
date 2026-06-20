@@ -8,6 +8,7 @@ import sqlite3 from 'sqlite3';
 // @ts-ignore
 import api from '@actual-app/api';
 import AdmZip from 'adm-zip';
+import { featureRouters } from './src/features/index';
 
 dotenv.config();
 
@@ -638,6 +639,27 @@ app.get('/api/data', async (req, res) => {
     console.error("Failed to load dashboard data:", err);
     res.status(500).json({ error: err.message || String(err) });
   }
+});
+
+// ==========================================
+// Vertical Slice Architecture Feature Routes
+// ==========================================
+//
+// In VSA, instead of keeping all API routes in this monolithic server.ts file,
+// routes are grouped inside their respective feature folders:
+// backend/src/features/[FeatureName]/router.ts
+//
+// The loop below automatically registers those feature-based routers
+// exported from backend/src/features/index.ts, dynamically prefixing them with `/api`.
+//
+// To register a new feature route:
+// 1. Implement the Express router in your feature's router.ts file.
+// 2. Register it in backend/src/features/index.ts.
+//
+Object.entries(featureRouters).forEach(([pathName, router]) => {
+  const apiPath = `/api${pathName}`;
+  console.log(`[VSA Infrastructure] Dynamically mounting feature router: ${apiPath}`);
+  app.use(apiPath, router);
 });
 
 // Serve static frontend files in production
