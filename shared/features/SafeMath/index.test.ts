@@ -21,8 +21,8 @@ describe('SafeMath parser', () => {
   });
 
   it('handles edge case: division by zero', () => {
-    // JS evaluates 1/0 as Infinity
-    expect(parseMathInput('1 / 0')).toBe(Infinity);
+    // JS evaluates 1/0 as Infinity, but parseMathInput returns 0 for non-finite results
+    expect(parseMathInput('1 / 0')).toBe(0);
   });
 
   it('handles edge case: mismatched or multiple parentheses (( ', () => {

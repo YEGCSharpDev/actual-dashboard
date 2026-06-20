@@ -36,7 +36,7 @@ export function parseMathInput(exprStr: string): number {
 
   try {
     const result = evaluateSimpleExpression(clean);
-    return isNaN(result) ? 0 : result;
+    return isNaN(result) || !isFinite(result) ? 0 : result;
   } catch (e) {
     // If the expression is malformed, we safely swallow the error and return 0.
     return 0;
