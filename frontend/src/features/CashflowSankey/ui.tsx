@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { useCashflowSankey } from './api';
+import { computeSankeyLayout } from './layout';
 
 export interface MonthlyCashflowSankeyProps {
   selectedMonth: string;
@@ -37,11 +38,13 @@ export const MonthlyCashflowSankey: React.FC<MonthlyCashflowSankeyProps> = ({ se
     );
   }
 
-  const { nodes, links, width, height } = data;
+  const { nodes: rawNodes, links: rawLinks } = data;
 
-  if (nodes.length === 0 && links.length === 0) {
+  if (rawNodes.length === 0 && rawLinks.length === 0) {
     return <div style={{ color: 'var(--color-text-secondary)', textAlign: 'center', padding: '2rem' }}>No data available for flow chart.</div>;
   }
+
+  const { nodes, links, width, height } = computeSankeyLayout(data);
 
   return (
     <>

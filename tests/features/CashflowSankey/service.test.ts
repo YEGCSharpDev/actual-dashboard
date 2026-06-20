@@ -38,8 +38,6 @@ describe('CashflowSankeyService', () => {
       
       expect(result.nodes.length).toBeGreaterThan(0);
       expect(result.links.length).toBeGreaterThan(0);
-      expect(result.width).toBe(900);
-      expect(result.height).toBe(600);
 
       // Verify specific nodes
       const labels = result.nodes.map((n: any) => n.label);
