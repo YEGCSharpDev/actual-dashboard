@@ -2,6 +2,8 @@ import { MonthlySpendingService } from '../MonthlySpending/service.js';
 import { getBudgets } from '../BudgetEnvelope/service.js';
 import { InvestmentProjectionsService } from '../InvestmentProjections/service.js';
 
+import { investmentConfig } from '@shared/config/env.js';
+
 export class DashboardSummaryService {
   public async getDashboard(month: string) {
     const monthlySpendingService = new MonthlySpendingService();
@@ -13,21 +15,10 @@ export class DashboardSummaryService {
       projectionsService.getProjectionsData()
     ]);
 
-    const parseJsonEnvArray = (val: string | undefined): string[] => {
-      if (!val) return [];
-      const clean = val.trim().replace(/^['"]|['"]$/g, '');
-      try {
-        return JSON.parse(clean);
-      } catch (err) {
-        console.error(`Failed to parse JSON env array: "${val}"`, err);
-        return [];
-      }
-    };
-
     const config = {
       categories: {
-        tfsa_tracking: parseJsonEnvArray(process.env.ACTUAL_TFSA_TRACKING),
-        budget_tracking: parseJsonEnvArray(process.env.ACTUAL_BUDGET_TRACKING),
+        tfsa_tracking: investmentConfig.tfsaTracking,
+        budget_tracking: investmentConfig.budgetTracking,
       },
       hasInvestments: projections.hasInvestments,
       hasRESP: projections.hasRESP,

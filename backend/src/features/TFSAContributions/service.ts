@@ -6,6 +6,7 @@
 
 import { queryLocalDb } from '../../../server.js';
 import type { TFSAYearToDateResponse, TFSAChartData, TFSAChartDataset } from '@shared/types/TFSAContributions';
+import { investmentConfig } from '@shared/config/env.js';
 
 export class TFSAContributionsService {
   /**
@@ -15,34 +16,10 @@ export class TFSAContributionsService {
    * @returns A promise resolving to the TFSA YTD payload.
    */
   public async getYearToDateContributions(): Promise<TFSAYearToDateResponse> {
-    const parseJsonEnvArray = (val: string | undefined): string[] => {
-      if (!val) return [];
-      const clean = val.trim().replace(/^['"]|['"]$/g, '');
-      try {
-        return JSON.parse(clean);
-      } catch (err) {
-        console.error(`Failed to parse JSON env array: "${val}"`, err);
-        return [];
-      }
-    };
-
-    const tfsaCats = parseJsonEnvArray(process.env.ACTUAL_TFSA_TRACKING);
-    const ytdLimit = Number(process.env.ACTUAL_TFSA_YTD_LIMIT || 7000.0);
-    const totalRoom = Number(process.env.ACTUAL_TFSA_TOTAL_ROOM || process.env.ACTUAL_TFSA_ANNUAL_ROOM || 7000.0);
-
-    const hasTFSA = !!(
-      process.env.ACTUAL_TFSA_TRACKING ||
-      process.env.ACTUAL_TFSA_HORIZON_YEARS ||
-      process.env.ACTUAL_TFSA_YTD_LIMIT ||
-      process.env.ACTUAL_TFSA_TOTAL_ROOM ||
-      process.env.ACTUAL_TFSA_ANNUAL_ROOM ||
-      process.env.ACTUAL_TFSA_BASE_IDENTIFIER ||
-      process.env.ACTUAL_TFSA_BASE_DEFAULT_RETURN_PCT ||
-      process.env.ACTUAL_TFSA_BASE_MONTHLY_CONTRIBUTION ||
-      process.env.ACTUAL_TFSA_CATCHUP_IDENTIFIER ||
-      process.env.ACTUAL_TFSA_CATCHUP_DEFAULT_RETURN_PCT ||
-      process.env.ACTUAL_TFSA_CATCHUP_YEAR_CONTRIBUTION
-    );
+    const tfsaCats = investmentConfig.tfsaTracking;
+    const ytdLimit = investmentConfig.tfsaYtdLimit;
+    const totalRoom = investmentConfig.tfsa.totalRoom;
+    const hasTFSA = investmentConfig.hasTFSA;
 
     if (!hasTFSA || tfsaCats.length === 0) {
       return {
