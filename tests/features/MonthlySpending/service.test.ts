@@ -55,12 +55,12 @@ describe('MonthlySpendingService', () => {
       expect(result.savingsRate).toBe(60);
 
       expect(result.income).toHaveLength(1);
-      expect(result.income[0]).toEqual({ Category_Name: 'Salary', amount: 500 });
+      expect(result.income[0]).toEqual({ categoryName: 'Salary', amount: 500 });
 
       expect(result.expenses).toHaveLength(2);
       expect(result.expenses).toEqual(expect.arrayContaining([
-        { Category_Name: 'Groceries', amount: 150 },
-        { Category_Name: 'Utilities', amount: 50 }
+        { categoryName: 'Groceries', amount: 150 },
+        { categoryName: 'Utilities', amount: 50 }
       ]));
     });
 
@@ -81,7 +81,7 @@ describe('MonthlySpendingService', () => {
       const result = await service.getMonthlySpending('2024-06');
 
       expect(result.expenses).toHaveLength(1);
-      expect(result.expenses[0]).toEqual({ Category_Name: 'Account Transfer', amount: 100 });
+      expect(result.expenses[0]).toEqual({ categoryName: 'Account Transfer', amount: 100 });
     });
 
     it('should handle empty transactions gracefully', async () => {

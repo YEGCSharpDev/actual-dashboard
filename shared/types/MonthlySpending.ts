@@ -11,7 +11,7 @@
  */
 export interface SpendingCategorySummary {
   /** The human-readable name of the budget category */
-  Category_Name: string;
+  categoryName: string;
   /** The total aggregated transaction amount in dollars */
   amount: number;
 }

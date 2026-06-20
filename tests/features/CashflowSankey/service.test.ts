@@ -23,8 +23,8 @@ describe('CashflowSankeyService', () => {
     it('should generate nodes and links correctly', async () => {
       const queryMock = vi.mocked(getMonthlySpending);
       queryMock.mockResolvedValue({
-        income: [{ Category_Name: 'Salary', amount: 5000 }],
-        expenses: [{ Category_Name: 'Rent', amount: 2000 }, { Category_Name: 'Food', amount: 1000 }],
+        income: [{ categoryName: 'Salary', amount: 5000 }],
+        expenses: [{ categoryName: 'Rent', amount: 2000 }, { categoryName: 'Food', amount: 1000 }],
         totalIncome: 5000,
         totalSpent: 3000,
         netIncome: 2000,
@@ -55,8 +55,8 @@ describe('CashflowSankeyService', () => {
     it('should include Deficit node when expenses > income', async () => {
       const queryMock = vi.mocked(getMonthlySpending);
       queryMock.mockResolvedValue({
-        income: [{ Category_Name: 'Salary', amount: 2000 }],
-        expenses: [{ Category_Name: 'Rent', amount: 3000 }],
+        income: [{ categoryName: 'Salary', amount: 2000 }],
+        expenses: [{ categoryName: 'Rent', amount: 3000 }],
         totalIncome: 2000,
         totalSpent: 3000,
         netIncome: -1000,

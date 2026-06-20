@@ -61,9 +61,9 @@ interface Transaction {
   account: string;
   account_name: string;
   account_offbudget: boolean;
-  Payee_Name: string;
+  payeeName: string;
   category: string;
-  Category_Name: string;
+  categoryName: string;
   is_income: boolean;
   Group_Name: string;
 }
@@ -329,7 +329,7 @@ export default function App() {
               <div className="card" style={{ marginBottom: '2rem' }}>
                 {config.categories.budget_tracking.map(cat => {
                   const budgeted = budgets[cat] || 0;
-                  const spent = dfExpenses.filter(t => t.Category_Name === cat).reduce((acc, t) => acc + t.amount, 0);
+                  const spent = dfExpenses.filter(t => t.categoryName === cat).reduce((acc, t) => acc + t.amount, 0);
                   const left = budgeted - spent;
                   
                   const pct = budgeted > 0 ? (spent / budgeted) * 100 : (spent > 0 ? 100 : 0);
@@ -396,10 +396,10 @@ export default function App() {
                       .map(t => (
                         <tr key={t.id}>
                           <td style={{ color: 'var(--color-text-secondary)' }}>{t.date}</td>
-                          <td style={{ fontWeight: 600 }}>{t.Payee_Name}</td>
+                          <td style={{ fontWeight: 600 }}>{t.payeeName}</td>
                           <td>
                             <span style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                              {t.Category_Name}
+                              {t.categoryName}
                             </span>
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--color-danger)' }}>

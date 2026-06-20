@@ -61,11 +61,11 @@ export async function getMonthlySpending(db: IDbClient, selectedMonth: string): 
   }
 
   const income: SpendingCategorySummary[] = Object.entries(incomeSummary)
-    .map(([Category_Name, amount]) => ({ Category_Name, amount }))
+    .map(([categoryName, amount]) => ({ categoryName, amount }))
     .filter(item => Math.abs(item.amount) > 0.001);
 
   const expenses: SpendingCategorySummary[] = Object.entries(expenseSummary)
-    .map(([Category_Name, amount]) => ({ Category_Name, amount }))
+    .map(([categoryName, amount]) => ({ categoryName, amount }))
     .filter(item => Math.abs(item.amount) > 0.001);
 
   const netIncome = totalIncome - totalSpent;
@@ -81,8 +81,8 @@ export async function getMonthlySpending(db: IDbClient, selectedMonth: string): 
       id: t.id,
       date: dateStr,
       amount: t.amount / CENTS_TO_DOLLARS_OUTFLOW_POSITIVE,
-      Payee_Name: t.transfer_account_name ? `Transfer: ${t.transfer_account_name}` : (t.payee_name || 'Unknown'),
-      Category_Name: t.transfer_account_name ? 'Account Transfer' : (t.category_name || 'Uncategorized'),
+      payeeName: t.transfer_account_name ? `Transfer: ${t.transfer_account_name}` : (t.payee_name || 'Unknown'),
+      categoryName: t.transfer_account_name ? 'Account Transfer' : (t.category_name || 'Uncategorized'),
       is_income: Boolean(t.category_is_income)
     };
   });

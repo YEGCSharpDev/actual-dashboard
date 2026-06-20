@@ -111,11 +111,11 @@ describe('Database Integration Tests', () => {
     expect(result.netIncome).toBe(950);
     
     expect(result.income).toHaveLength(1);
-    expect(result.income[0].Category_Name).toBe('Salary');
+    expect(result.income[0].categoryName).toBe('Salary');
     expect(result.income[0].amount).toBe(1000);
     
     expect(result.expenses).toHaveLength(1);
-    expect(result.expenses[0].Category_Name).toBe('Groceries');
+    expect(result.expenses[0].categoryName).toBe('Groceries');
     expect(result.expenses[0].amount).toBe(50);
   });
 });

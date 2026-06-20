@@ -43,17 +43,17 @@ export class CashflowSankeyService {
     // --- 1. Column 0: Income items and Deficit ---
     const col0Items = [...activeIncome];
     if (netFlow < 0) {
-      col0Items.push({ Category_Name: 'Overspending (Deficit)', amount: Math.abs(netFlow) });
+      col0Items.push({ categoryName: 'Overspending (Deficit)', amount: Math.abs(netFlow) });
     }
 
     col0Items.forEach((item: any) => {
       nodes.push({
-        id: `c0_${item.Category_Name}`,
-        label: item.Category_Name,
+        id: `c0_${item.categoryName}`,
+        label: item.categoryName,
         amount: item.amount
       });
       links.push({
-        sourceId: `c0_${item.Category_Name}`,
+        sourceId: `c0_${item.categoryName}`,
         targetId: 'c1_hub',
         amount: item.amount
       });
@@ -96,13 +96,13 @@ export class CashflowSankeyService {
     // --- 4. Column 3: Individual Expenses ---
     activeExpenses.forEach((item: any) => {
       nodes.push({
-        id: `c3_${item.Category_Name}`,
-        label: item.Category_Name,
+        id: `c3_${item.categoryName}`,
+        label: item.categoryName,
         amount: item.amount
       });
       links.push({
         sourceId: 'c2_Total Expenses',
-        targetId: `c3_${item.Category_Name}`,
+        targetId: `c3_${item.categoryName}`,
         amount: item.amount
       });
     });
