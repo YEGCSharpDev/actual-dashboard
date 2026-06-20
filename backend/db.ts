@@ -57,10 +57,10 @@ export function resetDbConnection() {
   dbPathCache = null;
 }
 
-import type { IDbClient } from './src/infrastructure/db/IDbClient.js';
+import type { IDbClient, SqlParam } from './src/infrastructure/db/IDbClient.js';
 
 export class LocalDbClient implements IDbClient {
-  public query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  public query<T = any>(sql: string, params: SqlParam[] = []): Promise<T[]> {
     return new Promise((resolve, reject) => {
       try {
         const db = getDb();
@@ -78,6 +78,6 @@ export class LocalDbClient implements IDbClient {
 export const defaultDbClient = new LocalDbClient();
 
 // Run a read-only query against local SQLite DB (Legacy wrapper)
-export function queryLocalDb<T = any>(query: string, params: any[] = []): Promise<T[]> {
+export function queryLocalDb<T = any>(query: string, params: SqlParam[] = []): Promise<T[]> {
   return defaultDbClient.query(query, params);
 }
