@@ -513,27 +513,7 @@ app.get('/api/data', async (req, res) => {
       budgets[b.name] = b.budgeted;
     });
 
-    // 4. Fetch Underfunded amounts (for selected month and next 2 months)
-    const targetMonths: string[] = [];
-    const dateObj = new Date(selectedMonth + '-02'); // middle of month to avoid timezone shifts
-    for (let i = 0; i < 3; i++) {
-      const m = new Date(dateObj.getFullYear(), dateObj.getMonth() + i, 1);
-      const yearStr = m.getFullYear();
-      const monthStr = String(m.getMonth() + 1).padStart(2, '0');
-      targetMonths.push(`${yearStr}${monthStr}`);
-    }
 
-    const underbudget: Record<string, number> = {};
-    for (const mStr of targetMonths) {
-      const rows = await queryLocalDb(`
-        SELECT COALESCE(SUM(zero_budgets.goal - zero_budgets.amount), 0) / 100.0 as underfunded
-        FROM zero_budgets
-        INNER JOIN categories ON categories.id = zero_budgets.category
-        WHERE month = ?
-          AND amount < goal;
-      `, [mStr]);
-      underbudget[mStr] = rows[0]?.underfunded || 0;
-    }
 
     // 5. Build parsed environment configs to send to frontend
     // Categories config
@@ -621,7 +601,6 @@ app.get('/api/data', async (req, res) => {
       accounts: enrichedAccounts,
       transactions: normalizedTransactions,
       budgets,
-      underbudget,
       config: {
         categories: { tfsa_tracking: tfsaTracking, budget_tracking: budgetTracking },
         resp: respConfig,

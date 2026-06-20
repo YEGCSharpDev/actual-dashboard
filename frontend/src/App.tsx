@@ -14,6 +14,7 @@ import type { ChartData } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { MonthlySpendingOverview } from './features/MonthlySpending/ui';
 import { MonthlyCashflowSankey } from './features/CashflowSankey/ui';
+import { BudgetEnvelopeHealth } from './features/BudgetEnvelope/ui';
 
 ChartJS.register(
   CategoryScale,
@@ -102,7 +103,6 @@ interface DashboardData {
   accounts: Account[];
   transactions: Transaction[];
   budgets: Record<string, number>;
-  underbudget: Record<string, number>;
   config: AppConfig;
   error: string | null;
 }
@@ -254,7 +254,7 @@ export default function App() {
 
   if (!data) return null;
 
-  const { transactions, accounts, budgets, underbudget, config } = data;
+  const { transactions, accounts, budgets, config } = data;
 
   // Filter transactions for selected month
   const dfFiltered = transactions.filter(t => t.date.substring(0, 7) === selectedMonth && !t.account_offbudget);
@@ -262,15 +262,7 @@ export default function App() {
   // Split income/expense (dfExpenses is used in Envelope Health & Transaction Log)
   const dfExpenses = dfFiltered.filter(t => !t.is_income);
 
-  // Future Envelope months mapping
-  const targetMonthsArr: { label: string; key: string }[] = [];
-  const dateObj = new Date(selectedMonth + '-02');
-  for (let i = 0; i < 3; i++) {
-    const m = new Date(dateObj.getFullYear(), dateObj.getMonth() + i, 1);
-    const label = m.toLocaleString('en-US', { month: 'short', year: 'numeric' });
-    const key = `${m.getFullYear()}${String(m.getMonth() + 1).padStart(2, '0')}`;
-    targetMonthsArr.push({ label, key });
-  }
+
 
   // Helper to get investment accounts dictionary
   const getInvestmentBalances = (type: 'RESP' | 'RRSP' | 'TFSA') => {
@@ -729,23 +721,7 @@ export default function App() {
           <MonthlySpendingOverview selectedMonth={selectedMonth} lastSyncTime={syncStatus?.lastSyncTime || null} />
 
           {/* 3. Envelope Health Checks */}
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Future Envelope Health</h2>
-          <div className="grid-cols-3" style={{ marginBottom: '2rem' }}>
-            {targetMonthsArr.map(item => {
-              const val = underbudget[item.key] || 0;
-              return (
-                <div className="card metric-card" key={item.key} style={{ borderColor: val > 0 ? 'var(--color-warning-border)' : 'var(--color-success-border)' }}>
-                  <span className="metric-label">Underfunded ({item.label})</span>
-                  <span className="metric-value" style={{ color: val > 0 ? 'var(--color-warning)' : 'var(--color-success)' }}>
-                    ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className={`metric-delta ${val > 0 ? 'delta-danger' : 'delta-success'}`}>
-                    {val > 0 ? 'Action Required' : 'Fully Funded'}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <BudgetEnvelopeHealth selectedMonth={selectedMonth} />
 
           {/* 4. Key Category Tracking */}
           {config.categories.budget_tracking.length > 0 && (
