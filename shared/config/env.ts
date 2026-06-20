@@ -1,4 +1,4 @@
-import type { StandardProjectionConfig, TFSAProjectionConfig } from '../types/InvestmentProjections';
+import type { StandardProjectionConfig, TFSAProjectionConfig } from '../types/InvestmentProjections.js';
 
 export const cleanEnvString = (val: string | undefined, defaultVal: string = ''): string => {
   if (!val) return defaultVal;

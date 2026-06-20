@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from 'express';
 import { BudgetEnvelopeService } from './service.js';
-import type { BudgetEnvelopeHealthResponse } from '../../../../shared/types/BudgetEnvelope';
+import type { BudgetEnvelopeHealthResponse } from '../../../../shared/types/BudgetEnvelope.js';
 
 export const budgetEnvelopeRouter = Router();
 const service = new BudgetEnvelopeService();

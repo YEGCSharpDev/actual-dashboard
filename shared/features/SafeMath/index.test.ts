@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMathInput } from './index';
+import { parseMathInput } from './index.js';
 
 describe('SafeMath parser', () => {
   it('handles basic arithmetic', () => {

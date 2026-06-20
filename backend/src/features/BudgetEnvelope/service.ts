@@ -6,7 +6,7 @@
 
 import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
 import { defaultDbClient } from '../../../db.js';
-import type { EnvelopeHealth } from '../../../../shared/types/BudgetEnvelope';
+import type { EnvelopeHealth } from '../../../../shared/types/BudgetEnvelope.js';
 
 export class BudgetEnvelopeService {
   constructor(private db: IDbClient = defaultDbClient) {}

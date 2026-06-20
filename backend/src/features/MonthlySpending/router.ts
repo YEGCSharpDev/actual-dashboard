@@ -5,7 +5,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { MonthlySpendingService } from './service';
+import { MonthlySpendingService } from './service.js';
 
 const router = Router();
 const service = new MonthlySpendingService();

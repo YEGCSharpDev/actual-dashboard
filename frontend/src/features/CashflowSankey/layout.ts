@@ -37,7 +37,7 @@ export function computeSankeyLayout(data: CashflowSankeyPayload): LayoutResult {
 
   const totalIncome = activeIncome.reduce((acc, x) => acc + x.amount, 0);
   const totalExpenses = activeExpenses.reduce((acc, x) => acc + x.amount, 0);
-  const netFlow = totalIncome - totalExpenses;
+  // netFlow is not used in the layout directly since nodes already include Savings/Deficit
 
   if (activeIncome.length === 0 && activeExpenses.length === 0) {
     return { nodes: [], links: [], width, height };

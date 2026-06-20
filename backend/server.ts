@@ -4,7 +4,7 @@
  * Initializes the connection to the Actual API, runs database syncs, and exposes 
  * global routes (like backups and monolithic legacy queries) alongside modular Vertical Slice routers.
  */
-import './navigator-polyfill';
+import './navigator-polyfill.js';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -17,7 +17,7 @@ import api from '@actual-app/api';
 import AdmZip from 'adm-zip';
 
 import { parseMathInput } from '../shared/features/SafeMath/index.js';
-import { featureRouters } from './src/features/index';
+import { featureRouters } from './src/features/index.js';
 
 dotenv.config();
 
