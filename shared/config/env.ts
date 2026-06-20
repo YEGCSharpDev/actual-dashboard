@@ -49,29 +49,9 @@ const tfsaYtdLimit = Number(process.env.ACTUAL_TFSA_YTD_LIMIT || 7000.0);
 const tfsaTracking = parseJsonEnvArray(process.env.ACTUAL_TFSA_TRACKING);
 const budgetTracking = parseJsonEnvArray(process.env.ACTUAL_BUDGET_TRACKING);
 
-const hasRESP = !!(
-  process.env.ACTUAL_RESP_IDENTIFIER ||
-  process.env.ACTUAL_RESP_HORIZON_YEARS ||
-  process.env.ACTUAL_RESP_DEFAULT_RETURN_PCT ||
-  process.env.ACTUAL_RESP_MONTHLY_CONTRIBUTION
-);
-
-const hasRRSP = !!(
-  process.env.ACTUAL_RRSP_IDENTIFIER ||
-  process.env.ACTUAL_RRSP_HORIZON_YEARS ||
-  process.env.ACTUAL_RRSP_DEFAULT_RETURN_PCT ||
-  process.env.ACTUAL_RRSP_ANNUAL_CONTRIBUTION
-);
-
-const hasTFSA = !!(
-  process.env.ACTUAL_TFSA_TRACKING ||
-  process.env.ACTUAL_TFSA_HORIZON_YEARS ||
-  process.env.ACTUAL_TFSA_TOTAL_ROOM ||
-  process.env.ACTUAL_TFSA_ANNUAL_ROOM ||
-  process.env.ACTUAL_TFSA_BASE_IDENTIFIER ||
-  process.env.ACTUAL_TFSA_CATCHUP_IDENTIFIER ||
-  process.env.ACTUAL_TFSA_YTD_LIMIT
-);
+const hasRESP = !!process.env.ACTUAL_RESP_IDENTIFIER;
+const hasRRSP = !!process.env.ACTUAL_RRSP_IDENTIFIER;
+const hasTFSA = tfsaTracking.length > 0;
 
 const hasInvestments = hasRESP || hasRRSP || hasTFSA;
 
