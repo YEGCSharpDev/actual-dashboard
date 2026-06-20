@@ -10,7 +10,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import sqlite3 from 'sqlite3';
+import { getDbPath, queryLocalDb, resetDbConnection } from './db.js';
+export { queryLocalDb };
 // @ts-ignore
 import api from '@actual-app/api';
 import AdmZip from 'adm-zip';
@@ -30,68 +31,6 @@ const DATA_DIR = process.env.ACTUAL_DATA_DIR || path.join(process.cwd(), '.actua
 let isSyncing = false;
 let syncError: string | null = null;
 let lastSyncTime: Date | null = null;
-let dbPathCache: string | null = null;
-
-// Resolve SQLite Database Path recursively
-function getDbPath(): string {
-  if (dbPathCache && fs.existsSync(dbPathCache)) {
-    return dbPathCache;
-  }
-
-  // Find db.sqlite in DATA_DIR
-  const findDbFile = (dir: string): string | null => {
-    const files = fs.readdirSync(dir);
-    for (const file of files) {
-      const fullPath = path.join(dir, file);
-      const stat = fs.statSync(fullPath);
-      if (stat.isDirectory()) {
-        const found = findDbFile(fullPath);
-        if (found) return found;
-      } else if (file === 'db.sqlite') {
-        return fullPath;
-      }
-    }
-    return null;
-  };
-
-  if (!fs.existsSync(DATA_DIR)) {
-    throw new Error(`Data directory ${DATA_DIR} does not exist. Please run sync first.`);
-  }
-
-  const foundPath = findDbFile(DATA_DIR);
-  if (!foundPath) {
-    throw new Error('Local Actual database (db.sqlite) not found in data directory.');
-  }
-
-  dbPathCache = foundPath;
-  return foundPath;
-}
-
-let sharedDb: sqlite3.Database | null = null;
-
-// Run a read-only query against local SQLite DB
-export function queryLocalDb<T = any>(query: string, params: any[] = []): Promise<T[]> {
-  return new Promise((resolve, reject) => {
-    try {
-      if (!sharedDb) {
-        const dbFile = getDbPath();
-        sharedDb = new sqlite3.Database(dbFile, sqlite3.OPEN_READONLY, (err) => {
-          if (err) {
-            sharedDb = null;
-            return reject(err);
-          }
-        });
-      }
-
-      sharedDb.all(query, params, (err, rows) => {
-        if (err) return reject(err);
-        resolve(rows as T[]);
-      });
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
 
 // Actual Sync logic
 async function doSync() {
@@ -112,10 +51,7 @@ async function doSync() {
   }
 
   try {
-    if (sharedDb) {
-      sharedDb.close();
-      sharedDb = null;
-    }
+    resetDbConnection();
 
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -137,7 +73,7 @@ async function doSync() {
     await api.shutdown();
     
     lastSyncTime = new Date();
-    dbPathCache = null; // Invalidate cache in case path changed
+    resetDbConnection(); // Invalidate cache and connections in case path changed
     console.log("Sync completed successfully!");
   } catch (err: any) {
     syncError = err.message || String(err);
