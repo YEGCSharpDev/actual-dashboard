@@ -4,11 +4,14 @@
  * calculating Year-to-Date TFSA Contributions and charting data.
  */
 
-import { queryLocalDb } from '../../../server.js';
+import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
+import { defaultDbClient } from '../../../db.js';
 import type { TFSAYearToDateResponse, TFSAChartData, TFSAChartDataset } from '@shared/types/TFSAContributions';
-import { investmentConfig } from '@shared/config/env.js';
+import { investmentConfig } from '../../../../shared/config/env.js';
 
 export class TFSAContributionsService {
+  constructor(private db: IDbClient = defaultDbClient) {}
+
   /**
    * Retrieves YTD TFSA contribution tracking data.
    * Pulls environment variables to determine limits and tracking categories.
@@ -38,7 +41,7 @@ export class TFSAContributionsService {
     const startDate = `${currentYear}0101`;
 
     // Query all relevant transactions for the current year
-    const transactions = await queryLocalDb(`
+    const transactions = await this.db.query(`
       SELECT 
         t.date, 
         t.amount, 

@@ -1,26 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MonthlySpendingService } from '../../../backend/src/features/MonthlySpending/service';
-import * as serverModule from '../../../backend/server';
-
-vi.mock('../../../backend/server', () => ({
-  queryLocalDb: vi.fn(),
-}));
+import type { IDbClient } from '../../../backend/src/infrastructure/db/IDbClient';
 
 describe('MonthlySpendingService', () => {
+  let mockDbClient: IDbClient;
   let service: MonthlySpendingService;
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    service = new MonthlySpendingService();
+    mockDbClient = { query: vi.fn() };
+    service = new MonthlySpendingService(mockDbClient);
   });
 
   describe('getMonthlySpending', () => {
     it('should aggregate income and expenses correctly', async () => {
-      const mockQueryLocalDb = vi.mocked(serverModule.queryLocalDb);
+      const queryMock = mockDbClient.query as any;
       
       // Amount in DB is in cents.
       // Outflows (expenses) are negative, inflows (income) are positive.
-      mockQueryLocalDb.mockResolvedValue([
+      queryMock.mockResolvedValue([
         {
           id: '1',
           amount: 50000, // $500 income
@@ -49,8 +46,8 @@ describe('MonthlySpendingService', () => {
 
       const result = await service.getMonthlySpending('2024-06');
 
-      expect(mockQueryLocalDb).toHaveBeenCalledTimes(1);
-      expect(mockQueryLocalDb).toHaveBeenCalledWith(expect.any(String), ['202406%']);
+      expect(queryMock).toHaveBeenCalledTimes(1);
+      expect(queryMock).toHaveBeenCalledWith(expect.any(String), ['202406%']);
 
       expect(result.totalIncome).toBe(500);
       expect(result.totalSpent).toBe(200);
@@ -68,9 +65,9 @@ describe('MonthlySpendingService', () => {
     });
 
     it('should handle transfers as Account Transfer', async () => {
-      const mockQueryLocalDb = vi.mocked(serverModule.queryLocalDb);
+      const queryMock = mockDbClient.query as any;
       
-      mockQueryLocalDb.mockResolvedValue([
+      queryMock.mockResolvedValue([
         {
           id: '1',
           amount: -10000, // $100 outflow
@@ -88,8 +85,8 @@ describe('MonthlySpendingService', () => {
     });
 
     it('should handle empty transactions gracefully', async () => {
-      const mockQueryLocalDb = vi.mocked(serverModule.queryLocalDb);
-      mockQueryLocalDb.mockResolvedValue([]);
+      const queryMock = mockDbClient.query as any;
+      queryMock.mockResolvedValue([]);
 
       const result = await service.getMonthlySpending('2024-06');
 
@@ -102,8 +99,8 @@ describe('MonthlySpendingService', () => {
     });
 
     it('should exclude zero amount categories', async () => {
-      const mockQueryLocalDb = vi.mocked(serverModule.queryLocalDb);
-      mockQueryLocalDb.mockResolvedValue([
+      const queryMock = mockDbClient.query as any;
+      queryMock.mockResolvedValue([
         {
           id: '1',
           amount: 0, 

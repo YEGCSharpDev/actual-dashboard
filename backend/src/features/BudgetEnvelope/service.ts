@@ -4,8 +4,12 @@
  * overbudget, and underbudget across current and future months.
  */
 
-import { queryLocalDb } from '../../../server';
+import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
+import { defaultDbClient } from '../../../db.js';
 import type { EnvelopeHealth } from '../../../../shared/types/BudgetEnvelope';
+
+export class BudgetEnvelopeService {
+  constructor(private db: IDbClient = defaultDbClient) {}
 
 /**
  * Retrieves the budget envelope health for the selected month and the two following months.
@@ -13,7 +17,7 @@ import type { EnvelopeHealth } from '../../../../shared/types/BudgetEnvelope';
  * @param selectedMonth - The current selected month in YYYY-MM format (e.g., '2024-06').
  * @returns A promise resolving to an array of EnvelopeHealth data for each target month.
  */
-export async function getEnvelopeHealth(selectedMonth: string): Promise<EnvelopeHealth[]> {
+  public async getEnvelopeHealth(selectedMonth: string): Promise<EnvelopeHealth[]> {
   const targetMonths: string[] = [];
   const dateObj = new Date(selectedMonth + '-02'); // middle of month to avoid timezone shifts
 
@@ -46,7 +50,7 @@ export async function getEnvelopeHealth(selectedMonth: string): Promise<Envelope
      * The query below calculates the total sum of deficits (goal - amount) only for categories
      * where amount < goal.
      */
-    const rows = await queryLocalDb(`
+    const rows = await this.db.query(`
       SELECT COALESCE(SUM(zero_budgets.goal - zero_budgets.amount), 0) / 100.0 as underfunded
       FROM zero_budgets
       INNER JOIN categories ON categories.id = zero_budgets.category
@@ -76,14 +80,14 @@ export async function getEnvelopeHealth(selectedMonth: string): Promise<Envelope
  * @param selectedMonth - The current selected month in YYYY-MM format.
  * @returns A promise resolving to a record mapping category names to their budgeted amounts.
  */
-export async function getBudgets(selectedMonth: string): Promise<Record<string, number>> {
+  public async getBudgets(selectedMonth: string): Promise<Record<string, number>> {
   const queryMonthSql = selectedMonth.replace('-', '');
-  const budgetsRaw = await queryLocalDb(`
-    SELECT c.name, COALESCE(zb.amount, 0) / 100.0 as budgeted
-    FROM zero_budgets zb
-    INNER JOIN categories c ON c.id = zb.category
-    WHERE zb.month = ?
-  `, [queryMonthSql]);
+    const budgetsRaw = await this.db.query(`
+      SELECT c.name, COALESCE(zb.amount, 0) / 100.0 as budgeted
+      FROM zero_budgets zb
+      INNER JOIN categories c ON c.id = zb.category
+      WHERE zb.month = ?
+    `, [queryMonthSql]);
 
   const budgets: Record<string, number> = {};
   budgetsRaw.forEach((b: any) => {
@@ -91,4 +95,5 @@ export async function getBudgets(selectedMonth: string): Promise<Record<string, 
   });
 
   return budgets;
+  }
 }

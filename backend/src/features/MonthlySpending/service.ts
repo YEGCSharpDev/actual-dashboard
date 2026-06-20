@@ -4,7 +4,8 @@
  * retrieving monthly spending and income aggregates.
  */
 
-import { queryLocalDb } from '../../../server.js';
+import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
+import { defaultDbClient } from '../../../db.js';
 import type { MonthlySpendingPayload, SpendingCategorySummary } from '@shared/types/MonthlySpending';
 
 /**
@@ -12,6 +13,8 @@ import type { MonthlySpendingPayload, SpendingCategorySummary } from '@shared/ty
  * Handles database interaction and aggregation of income/expenses.
  */
 export class MonthlySpendingService {
+  constructor(private db: IDbClient = defaultDbClient) {}
+
   /**
    * Retrieves aggregated monthly spending and income analytics for a given month.
    * Filters out transactions on off-budget accounts.
@@ -26,7 +29,7 @@ export class MonthlySpendingService {
     
     // Fetch all transactions for the specified month from the on-budget accounts.
     // Exclude deleted (tombstone) and parent transactions.
-    const rawTransactions = await queryLocalDb(`
+    const rawTransactions = await this.db.query(`
       SELECT 
         t.id, 
         t.date, 

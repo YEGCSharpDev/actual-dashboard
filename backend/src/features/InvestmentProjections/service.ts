@@ -4,16 +4,19 @@
  * Parses investment environment variables and provides compound interest forecasts for RESP, RRSP, and TFSA.
  */
 
-import { queryLocalDb } from '../../../server.js';
+import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
+import { defaultDbClient } from '../../../db.js';
 import type { 
   InvestmentProjectionsPayload, 
   StandardProjectionConfig, 
   TFSAProjectionConfig,
   ProjectionSeries
 } from '@shared/types/InvestmentProjections';
-import { investmentConfig } from '@shared/config/env.js';
+import { investmentConfig } from '../../../../shared/config/env.js';
 
 export class InvestmentProjectionsService {
+  constructor(private db: IDbClient = defaultDbClient) {}
+
   /**
    * Generates a baseline standard projection for an investment account grouping (e.g., RESP, RRSP).
    * 
@@ -153,7 +156,7 @@ export class InvestmentProjectionsService {
     } = investmentConfig;
 
     // Fetch accounts and balances
-    const rawAccounts = await queryLocalDb(`
+    const rawAccounts = await this.db.query(`
       SELECT 
         a.id, 
         a.name, 

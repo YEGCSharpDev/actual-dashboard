@@ -4,10 +4,11 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { getEnvelopeHealth } from './service';
+import { BudgetEnvelopeService } from './service.js';
 import type { BudgetEnvelopeHealthResponse } from '../../../../shared/types/BudgetEnvelope';
 
 export const budgetEnvelopeRouter = Router();
+const service = new BudgetEnvelopeService();
 
 /**
  * GET /health
@@ -25,7 +26,7 @@ budgetEnvelopeRouter.get('/health', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'month query parameter is required (YYYY-MM)' });
     }
 
-    const healthData = await getEnvelopeHealth(selectedMonth);
+    const healthData = await service.getEnvelopeHealth(selectedMonth);
     
     const responsePayload: BudgetEnvelopeHealthResponse = {
       healthData
