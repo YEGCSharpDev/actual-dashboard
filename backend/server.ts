@@ -134,14 +134,15 @@ export async function runBackup(): Promise<string> {
   }
   
   const now = new Date();
-  const DD = String(now.getDate()).padStart(2, '0');
-  const MM = String(now.getMonth() + 1).padStart(2, '0');
   const YYYY = now.getFullYear();
+  const MM = String(now.getMonth() + 1).padStart(2, '0');
+  const DD = String(now.getDate()).padStart(2, '0');
   const HH = String(now.getHours()).padStart(2, '0');
   const Min = String(now.getMinutes()).padStart(2, '0');
   const SS = String(now.getSeconds()).padStart(2, '0');
   
-  const filename = `${DD}${MM}${YYYY}${HH}${Min}${SS}.zip`;
+  const suffix = Math.random().toString(36).substring(2, 6);
+  const filename = `${YYYY}${MM}${DD}_${HH}${Min}${SS}_${suffix}.zip`;
   const zipPath = path.join(backupDir, filename);
   
   console.log(`[Backup] Starting backup to ${zipPath}...`);
