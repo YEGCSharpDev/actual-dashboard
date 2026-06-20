@@ -67,17 +67,23 @@ function getDbPath(): string {
   return foundPath;
 }
 
+let sharedDb: sqlite3.Database | null = null;
+
 // Run a read-only query against local SQLite DB
 export function queryLocalDb<T = any>(query: string, params: any[] = []): Promise<T[]> {
   return new Promise((resolve, reject) => {
     try {
-      const dbFile = getDbPath();
-      const db = new sqlite3.Database(dbFile, sqlite3.OPEN_READONLY, (err) => {
-        if (err) return reject(err);
-      });
+      if (!sharedDb) {
+        const dbFile = getDbPath();
+        sharedDb = new sqlite3.Database(dbFile, sqlite3.OPEN_READONLY, (err) => {
+          if (err) {
+            sharedDb = null;
+            return reject(err);
+          }
+        });
+      }
 
-      db.all(query, params, (err, rows) => {
-        db.close();
+      sharedDb.all(query, params, (err, rows) => {
         if (err) return reject(err);
         resolve(rows as T[]);
       });
@@ -106,6 +112,11 @@ async function doSync() {
   }
 
   try {
+    if (sharedDb) {
+      sharedDb.close();
+      sharedDb = null;
+    }
+
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
