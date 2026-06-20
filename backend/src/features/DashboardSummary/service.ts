@@ -2,7 +2,7 @@ import { MonthlySpendingService } from '../MonthlySpending/service.js';
 import { BudgetEnvelopeService } from '../BudgetEnvelope/service.js';
 import { InvestmentProjectionsService } from '../InvestmentProjections/service.js';
 import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
-import { defaultDbClient } from '../../../db.js';
+import { defaultDbClient } from '../../db/client.js';
 
 import { investmentConfig } from '../../../../shared/config/env.js';
 

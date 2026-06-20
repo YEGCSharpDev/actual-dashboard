@@ -27,6 +27,7 @@ import { budgetEnvelopeRouter } from './BudgetEnvelope/router.js';
 import { tfsaContributionsRouter } from './TFSAContributions/router.js';
 import { investmentProjectionsRouter } from './InvestmentProjections/router.js';
 import { dashboardSummaryRouter } from './DashboardSummary/router.js';
+import { backupRouter } from './Backup/router.js';
 
 // Feature routers will be imported and registered here as we refactor each horizontal concern.
 
@@ -42,4 +43,5 @@ export const featureRouters: Record<string, Router> = {
   '/tfsa-contributions': tfsaContributionsRouter,
   '/investment-projections': investmentProjectionsRouter,
   '/dashboard': dashboardSummaryRouter,
+  '/backups': backupRouter,
 };

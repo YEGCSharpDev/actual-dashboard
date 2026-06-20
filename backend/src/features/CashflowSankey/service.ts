@@ -8,7 +8,7 @@
 
 import type { CashflowSankeyPayload, SankeyNode, SankeyLink } from '@shared/types/CashflowSankey';
 import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
-import { defaultDbClient } from '../../../db.js';
+import { defaultDbClient } from '../../db/client.js';
 import { getMonthlySpending } from '../../shared/queries/getMonthlySpending.js';
 
 export class CashflowSankeyService {

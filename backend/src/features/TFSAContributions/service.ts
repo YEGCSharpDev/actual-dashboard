@@ -5,7 +5,7 @@
  */
 
 import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
-import { defaultDbClient } from '../../../db.js';
+import { defaultDbClient } from '../../db/client.js';
 import type { TFSAYearToDateResponse, TFSAChartData, TFSAChartDataset } from '@shared/types/TFSAContributions.js';
 import { investmentConfig } from '../../../../shared/config/env.js';
 import { CENTS_TO_DOLLARS_OUTFLOW_POSITIVE } from '../../../../shared/constants/financial.js';

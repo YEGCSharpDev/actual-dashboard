@@ -5,7 +5,7 @@
  */
 
 import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
-import { defaultDbClient } from '../../../db.js';
+import { defaultDbClient } from '../../db/client.js';
 import type { 
   InvestmentProjectionsPayload, 
   StandardProjectionConfig, 

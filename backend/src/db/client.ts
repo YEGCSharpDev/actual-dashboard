@@ -88,7 +88,7 @@ export function resetDbConnection() {
   dbPathCache = null;
 }
 
-import type { IDbClient, SqlParam } from './src/infrastructure/db/IDbClient.js';
+import type { IDbClient, SqlParam } from '../infrastructure/db/IDbClient.js';
 
 export class LocalDbClient implements IDbClient {
   public query<T = any>(sql: string, params: SqlParam[] = []): Promise<T[]> {

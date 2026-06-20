@@ -5,7 +5,7 @@
  */
 
 import type { IDbClient } from '../../infrastructure/db/IDbClient.js';
-import { defaultDbClient } from '../../../db.js';
+import { defaultDbClient } from '../../db/client.js';
 import type { MonthlySpendingPayload } from '@shared/types/MonthlySpending';
 import { getMonthlySpending } from '../../shared/queries/getMonthlySpending.js';
 
