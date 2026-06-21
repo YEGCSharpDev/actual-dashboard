@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { MonthlySpendingPayload } from '@shared/types/MonthlySpending';
 
-const API_BASE_URL = import.meta.env.DEV ? 'http://localhost:3000' : '';
+const API_BASE_URL = '';
 
 /**
  * Sends a GET request to the backend server to fetch aggregated monthly income and expenses.

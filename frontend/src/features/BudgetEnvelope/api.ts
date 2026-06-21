@@ -5,7 +5,7 @@
 
 import type { BudgetEnvelopeHealthResponse } from '../../../../shared/types/BudgetEnvelope';
 
-const API_BASE_URL = import.meta.env.DEV ? 'http://localhost:3000' : '';
+const API_BASE_URL = '';
 
 /**
  * Fetches the budget envelope health data for a given month.
