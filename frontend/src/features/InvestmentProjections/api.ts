@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import type { InvestmentProjectionsPayload } from '@shared/types/InvestmentProjections';
 
-const API_BASE_URL = import.meta.env.DEV ? 'http://localhost:3000/api' : '/api';
+const API_BASE_URL = '/api';
 
 /**
  * Fetches the Investment Projections baseline payload.

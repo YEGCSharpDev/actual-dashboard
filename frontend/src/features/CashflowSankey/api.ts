@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import type { CashflowSankeyPayload } from '@shared/types/CashflowSankey';
 
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_BASE_URL = '/api';
 
 /**
  * Fetches the computed Cashflow Sankey layout payload.
