@@ -19,6 +19,7 @@ RUN npm install
 # Copy source code
 COPY backend ./backend
 COPY frontend ./frontend
+COPY shared ./shared
 
 # Build both frontend and backend
 RUN npm run build
