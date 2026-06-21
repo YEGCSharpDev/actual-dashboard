@@ -5,9 +5,9 @@
  * global routes (like backups and monolithic legacy queries) alongside modular Vertical Slice routers.
  */
 import './navigator-polyfill.js';
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { getDbPath, queryLocalDb, resetDbConnection } from './src/db/client.js';
@@ -18,8 +18,6 @@ import AdmZip from 'adm-zip';
 
 import { parseMathInput } from '../shared/features/SafeMath/index.js';
 import { featureRouters } from './src/features/index.js';
-
-dotenv.config();
 
 const app = express();
 app.use(cors());
