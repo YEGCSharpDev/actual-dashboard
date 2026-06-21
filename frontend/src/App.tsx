@@ -1,3 +1,9 @@
+/**
+ * @file frontend/src/App.tsx
+ * @description Main application entry point for the Actual Budget Dashboard.
+ * Serves as the primary layout wrapper and central data fetcher for monolithic features
+ * while rendering isolated Vertical Slice components.
+ */
 import { useState, useEffect, useCallback } from 'react';
 import {
   Chart as ChartJS,
@@ -10,9 +16,12 @@ import {
   Legend,
   Filler
 } from 'chart.js';
-import type { ChartData } from 'chart.js';
-import { Line } from 'react-chartjs-2';
-import { Sankey } from './Sankey';
+
+import { MonthlySpendingOverview } from './features/MonthlySpending/ui';
+import { MonthlyCashflowSankey } from './features/CashflowSankey/ui';
+import { BudgetEnvelopeHealth } from './features/BudgetEnvelope/ui';
+import { TFSAContributionsYTD } from './features/TFSAContributions/ui';
+import { InvestmentProjectionsDashboard } from './features/InvestmentProjections/ui';
 
 ChartJS.register(
   CategoryScale,
@@ -33,104 +42,7 @@ ChartJS.defaults.scale.ticks.color = '#cbd5e1';
 ChartJS.defaults.scale.grid.color = 'rgba(255, 255, 255, 0.05)';
 
 
-// Math expression parser
-function parseMathInput(exprStr: string): number {
-  if (!exprStr || !exprStr.trim()) return 0;
-  
-  const clean = exprStr.replace(/\s+/g, '');
-  if (!/^[0-9+\-*/().]+$/.test(clean)) {
-    return 0;
-  }
 
-  try {
-    return evaluateSimpleExpression(clean);
-  } catch (e) {
-    return 0;
-  }
-}
-
-function evaluateSimpleExpression(expr: string): number {
-  const tokens: string[] = [];
-  let numAccum = '';
-  
-  for (let i = 0; i < expr.length; i++) {
-    const char = expr[i];
-    if (/[0-9.]/.test(char)) {
-      numAccum += char;
-    } else {
-      if (numAccum) {
-        tokens.push(numAccum);
-        numAccum = '';
-      }
-      tokens.push(char);
-    }
-  }
-  if (numAccum) {
-    tokens.push(numAccum);
-  }
-
-  const parseNoParens = (toks: string[]): number => {
-    const intermediate: (number | string)[] = [];
-    let i = 0;
-    while (i < toks.length) {
-      const tok = toks[i];
-      if (tok === '*' || tok === '/') {
-        const left = Number(intermediate.pop());
-        const right = Number(toks[i + 1]);
-        if (tok === '*') {
-          intermediate.push(left * right);
-        } else {
-          intermediate.push(left / right);
-        }
-        i += 2;
-      } else {
-        intermediate.push(isNaN(Number(tok)) ? tok : Number(tok));
-        i++;
-      }
-    }
-
-    if (intermediate.length === 0) return 0;
-    let res = Number(intermediate[0]);
-    let j = 1;
-    while (j < intermediate.length) {
-      const op = intermediate[j];
-      const val = Number(intermediate[j + 1]);
-      if (op === '+') {
-        res += val;
-      } else if (op === '-') {
-        res -= val;
-      }
-      j += 2;
-    }
-    return res;
-  };
-
-  let hasParens = tokens.includes('(');
-  let limit = 100;
-  while (hasParens && limit > 0) {
-    limit--;
-    let openIdx = -1;
-    let closeIdx = -1;
-    for (let i = 0; i < tokens.length; i++) {
-      if (tokens[i] === '(') {
-        openIdx = i;
-      } else if (tokens[i] === ')') {
-        closeIdx = i;
-        break;
-      }
-    }
-    if (openIdx !== -1 && closeIdx !== -1) {
-      const subExpression = tokens.slice(openIdx + 1, closeIdx);
-      const val = parseNoParens(subExpression);
-      tokens.splice(openIdx, closeIdx - openIdx + 1, val.toString());
-    } else {
-      break;
-    }
-    hasParens = tokens.includes('(');
-  }
-
-  return parseNoParens(tokens);
-}
 
 // Interfaces for API response
 interface Account {
@@ -149,9 +61,9 @@ interface Transaction {
   account: string;
   account_name: string;
   account_offbudget: boolean;
-  Payee_Name: string;
+  payeeName: string;
   category: string;
-  Category_Name: string;
+  categoryName: string;
   is_income: boolean;
   Group_Name: string;
 }
@@ -198,7 +110,6 @@ interface DashboardData {
   accounts: Account[];
   transactions: Transaction[];
   budgets: Record<string, number>;
-  underbudget: Record<string, number>;
   config: AppConfig;
   error: string | null;
 }
@@ -213,19 +124,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{ isSyncing: boolean; lastSyncTime: string | null; syncError: string | null } | null>(null);
 
-  // User input states
-  const [addInc, setAddInc] = useState<string>('0');
-  const [addExp, setAddExp] = useState<string>('0');
-  
-  // Return rate sliders
-  const [respReturnPct, setRespReturnPct] = useState<number>(0);
-  const [rrspReturnPct, setRrspReturnPct] = useState<number>(0);
-  const [tfsaBaseReturnPct, setTfsaBaseReturnPct] = useState<number>(0);
-  const [tfsaWsReturnPct, setTfsaWsReturnPct] = useState<number>(0);
-  
-  // Investment tab state
-  const [activeInvestTab, setActiveInvestTab] = useState<'RESP' | 'RRSP' | 'TFSA'>('RESP');
-  
   // Page selector state
   const [activePage, setActivePage] = useState<'dashboard' | 'investments'>('dashboard');
 
@@ -244,38 +142,19 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/data?month=${month}`);
+      const res = await fetch(`${API_BASE_URL}/api/dashboard?month=${month}`);
       const json = await res.json();
       if (json.error) {
         setError(json.error);
       } else {
         setData(json);
-        
-        // Initialize return pct states from config if they haven't been touched
-        if (respReturnPct === 0 && json.config) {
-          setRespReturnPct(json.config.resp.default_return_pct);
-          setRrspReturnPct(json.config.rrsp.default_return_pct);
-          setTfsaBaseReturnPct(json.config.tfsa.base.default_return_pct);
-          setTfsaWsReturnPct(json.config.tfsa.catchup.default_return_pct);
-        }
-
-        // Set active tab to the first configured investment category if current activeInvestTab is not available
-        if (json.config) {
-          const available: ('RESP' | 'RRSP' | 'TFSA')[] = [];
-          if (json.config.hasRESP) available.push('RESP');
-          if (json.config.hasRRSP) available.push('RRSP');
-          if (json.config.hasTFSA) available.push('TFSA');
-          if (available.length > 0 && !available.includes(activeInvestTab)) {
-            setActiveInvestTab(available[0]);
-          }
-        }
       }
     } catch (e: any) {
       setError(e.message || String(e));
     } finally {
       setLoading(false);
     }
-  }, [respReturnPct]);
+  }, []);
 
   // Load initial configurations and set initial month
   useEffect(() => {
@@ -354,426 +233,17 @@ export default function App() {
 
   if (!data) return null;
 
-  const { transactions, accounts, budgets, underbudget, config } = data;
+  const { transactions, budgets, config } = data;
 
   // Filter transactions for selected month
   const dfFiltered = transactions.filter(t => t.date.substring(0, 7) === selectedMonth && !t.account_offbudget);
 
-  // Split income/expense
-  const dfIncome = dfFiltered.filter(t => t.is_income);
+  // Split income/expense (dfExpenses is used in Envelope Health & Transaction Log)
   const dfExpenses = dfFiltered.filter(t => !t.is_income);
 
-  // Totals
-  // Income amounts are negative in database representation of outflows, so we sum them and flip sign
-  const totalIncome = dfIncome.reduce((acc, t) => acc + (t.amount * -1), 0);
-  const totalSpent = dfExpenses.reduce((acc, t) => acc + t.amount, 0);
-  const netIncome = totalIncome - totalSpent;
 
-  // Expected values
-  const expectedIncome = totalIncome + parseMathInput(addInc);
-  const expectedExpenses = totalSpent + parseMathInput(addExp);
-  const forecastNet = expectedIncome - expectedExpenses;
 
-  // Savings rates
-  const savingsRate = totalIncome > 0 ? (netIncome / totalIncome) * 100 : 0;
-  const expectedSavingsRate = expectedIncome > 0 ? (forecastNet / expectedIncome) * 100 : 0;
 
-  // Progress bar percentages
-  const maxExpected = Math.max(expectedIncome, expectedExpenses, 1.0);
-  const incPct = Math.min((totalIncome / maxExpected) * 100, 100.0);
-  const expPct = Math.min((totalSpent / maxExpected) * 100, 100.0);
-
-  // Future Envelope months mapping
-  const targetMonthsArr: { label: string; key: string }[] = [];
-  const dateObj = new Date(selectedMonth + '-02');
-  for (let i = 0; i < 3; i++) {
-    const m = new Date(dateObj.getFullYear(), dateObj.getMonth() + i, 1);
-    const label = m.toLocaleString('en-US', { month: 'short', year: 'numeric' });
-    const key = `${m.getFullYear()}${String(m.getMonth() + 1).padStart(2, '0')}`;
-    targetMonthsArr.push({ label, key });
-  }
-
-  // Helper to get investment accounts dictionary
-  const getInvestmentBalances = (type: 'RESP' | 'RRSP' | 'TFSA') => {
-    const balances: Record<string, number> = {};
-    const respId = config.resp.identifier.toUpperCase();
-    const rrspId = config.rrsp.identifier.toUpperCase();
-    const tfsaId = config.tfsa.base.identifier.toUpperCase();
-    const tfsaCatchupId = config.tfsa.catchup.identifier.toUpperCase();
-
-    accounts.forEach(acc => {
-      if (acc.closed || !acc.offbudget) return;
-      const name = acc.name.toUpperCase();
-      let match = false;
-      if (type === 'RESP' && name.includes(respId)) match = true;
-      if (type === 'RRSP' && name.includes(rrspId)) match = true;
-      if (type === 'TFSA') {
-        if (name.includes('TFSA') || name.includes(tfsaId) || name.includes(tfsaCatchupId)) {
-          match = true;
-        }
-      }
-
-      if (match) {
-        balances[acc.name] = (acc.balance_current || 0) / 100.0;
-      }
-    });
-    return balances;
-  };
-
-  // Build forecast data
-  const buildForecastSeries = (
-    accountDict: Record<string, number>,
-    yearsToTrack: number,
-    returnRate: number,
-    annualContribution: number
-  ) => {
-    const currentYear = new Date().getFullYear();
-    const forecastData: Record<string, number[]> = {};
-    const years: number[] = [];
-    const accountsList = Object.keys(accountDict);
-    
-    // Initialize array for each account
-    accountsList.forEach(name => {
-      forecastData[name] = [];
-    });
-
-    for (let yearOffset = 0; yearOffset <= yearsToTrack; yearOffset++) {
-      years.push(currentYear + yearOffset);
-    }
-
-    let totalCurrent = 0;
-    let totalHalfway = 0;
-    let totalFinal = 0;
-    const halfwayOffset = Math.floor(yearsToTrack / 2);
-
-    accountsList.forEach(name => {
-      let currentBalance = accountDict[name];
-      totalCurrent += currentBalance;
-
-      for (let yearOffset = 0; yearOffset <= yearsToTrack; yearOffset++) {
-        if (yearOffset === halfwayOffset) totalHalfway += currentBalance;
-        if (yearOffset === yearsToTrack) totalFinal += currentBalance;
-
-        forecastData[name].push(currentBalance);
-        
-        // Compound interest and add contribution
-        currentBalance = (currentBalance * (1 + returnRate)) + annualContribution;
-      }
-    });
-
-    return { years, forecastData, totalCurrent, totalHalfway, totalFinal };
-  };
-
-  // Build TFSA Forecast Series (using custom base and catchup rules)
-  const buildTfsaForecastSeries = () => {
-    const accountDict = getInvestmentBalances('TFSA');
-    const yearsToTrack = config.tfsa.horizon_years;
-    const currentYear = new Date().getFullYear();
-    const accountsList = Object.keys(accountDict);
-    const years: number[] = [];
-    const forecastData: Record<string, number[]> = {};
-
-    accountsList.forEach(name => {
-      forecastData[name] = [];
-    });
-
-    for (let yearOffset = 0; yearOffset <= yearsToTrack; yearOffset++) {
-      years.push(currentYear + yearOffset);
-    }
-
-    let totalCurrent = 0;
-    let totalHalfway = 0;
-    let totalFinal = 0;
-    const halfwayOffset = Math.floor(yearsToTrack / 2);
-
-    const catchupMatch = config.tfsa.catchup.identifier.toUpperCase();
-    const baseAnnualContrib = config.tfsa.base.monthly_contribution * 12;
-    const wsCatchupYearAnnual = config.tfsa.catchup.catchup_year_contribution;
-    const wsFutureAnnual = config.tfsa.total_room - baseAnnualContrib;
-
-    accountsList.forEach(name => {
-      let currentBalance = accountDict[name];
-      totalCurrent += currentBalance;
-
-      const upperName = name.toUpperCase();
-      const catchupWords = catchupMatch.split(/\s+/).filter(w => w && w !== 'TFSA');
-      const isCatchup = upperName.includes(catchupMatch) || 
-                        upperName.includes("WEALTHSIMPLE") ||
-                        (catchupWords.length > 0 && catchupWords.every(word => upperName.includes(word)));
-      const rate = isCatchup ? tfsaWsReturnPct / 100.0 : tfsaBaseReturnPct / 100.0;
-
-      for (let yearOffset = 0; yearOffset <= yearsToTrack; yearOffset++) {
-        if (yearOffset === halfwayOffset) totalHalfway += currentBalance;
-        if (yearOffset === yearsToTrack) totalFinal += currentBalance;
-
-        forecastData[name].push(currentBalance);
-
-        // Get contribution based on rules
-        let contrib = baseAnnualContrib;
-        if (isCatchup) {
-          contrib = yearOffset === 0 ? wsCatchupYearAnnual : wsFutureAnnual;
-        }
-
-        currentBalance = (currentBalance * (1 + rate)) + contrib;
-      }
-    });
-
-    return { years, forecastData, totalCurrent, totalHalfway, totalFinal };
-  };
-
-  // TFSA YTD velocity chart calculations
-  const buildTfsaYtdVelocityChart = (): ChartData<'line'> | null => {
-    const tfsaCats = config.categories.tfsa_tracking;
-    // For YTD, filter from Jan 1 to selected month
-    const tfsaTxns = transactions.filter(t => !t.is_income && !t.account_offbudget && tfsaCats.includes(t.Category_Name));
-    if (tfsaTxns.length === 0) return null;
-
-    // Sort transactions by date
-    tfsaTxns.sort((a, b) => a.date.localeCompare(b.date));
-
-    // Get unique dates
-    const dates = Array.from(new Set(tfsaTxns.map(t => t.date)));
-    
-    // Colors for TFSA tracking categories
-    const colors = ['#4f46e5', '#10b981', '#f59e0b', '#f43f5e'];
-
-    const datasets = tfsaCats.map((cat, idx) => {
-      const dataPoints: number[] = [];
-      let runningSum = 0;
-
-      dates.forEach(date => {
-        const dayAmount = tfsaTxns
-          .filter(t => t.Category_Name === cat && t.date === date)
-          .reduce((acc, t) => acc + t.amount, 0);
-        runningSum += dayAmount;
-        dataPoints.push(runningSum);
-      });
-
-      return {
-        label: cat,
-        data: dataPoints,
-        borderColor: colors[idx % colors.length],
-        backgroundColor: `${colors[idx % colors.length]}10`,
-        fill: true,
-        tension: 0.1,
-        borderWidth: 2,
-        pointRadius: 2,
-      };
-    });
-
-    return {
-      labels: dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
-      datasets,
-    };
-  };
-
-  // Render investment projections content
-  const renderInvestmentProjections = () => {
-    let years: number[] = [];
-    let forecastData: Record<string, number[]> = {};
-    let totalCurrent = 0;
-    let totalHalfway = 0;
-    let totalFinal = 0;
-    let horizonYears = 10;
-
-    if (activeInvestTab === 'RESP') {
-      const dict = getInvestmentBalances('RESP');
-      horizonYears = config.resp.horizon_years;
-      const res = buildForecastSeries(
-        dict,
-        horizonYears,
-        respReturnPct / 100.0,
-        config.resp.monthly_contribution * 12
-      );
-      years = res.years;
-      forecastData = res.forecastData;
-      totalCurrent = res.totalCurrent;
-      totalHalfway = res.totalHalfway;
-      totalFinal = res.totalFinal;
-    } else if (activeInvestTab === 'RRSP') {
-      const dict = getInvestmentBalances('RRSP');
-      horizonYears = config.rrsp.horizon_years;
-      const res = buildForecastSeries(
-        dict,
-        horizonYears,
-        rrspReturnPct / 100.0,
-        config.rrsp.annual_contribution
-      );
-      years = res.years;
-      forecastData = res.forecastData;
-      totalCurrent = res.totalCurrent;
-      totalHalfway = res.totalHalfway;
-      totalFinal = res.totalFinal;
-    } else if (activeInvestTab === 'TFSA') {
-      horizonYears = config.tfsa.horizon_years;
-      const res = buildTfsaForecastSeries();
-      years = res.years;
-      forecastData = res.forecastData;
-      totalCurrent = res.totalCurrent;
-      totalHalfway = res.totalHalfway;
-      totalFinal = res.totalFinal;
-    }
-
-    const accountsList = Object.keys(forecastData);
-    if (accountsList.length === 0) {
-      return <div className="card" style={{ color: 'var(--color-text-secondary)', textAlign: 'center' }}>No accounts found for this category.</div>;
-    }
-
-    const currentYear = new Date().getFullYear();
-    const halfwayOffset = Math.floor(horizonYears / 2);
-
-    // Prepare chart js datasets
-    const colors = ['#6366f1', '#10b981', '#3b82f6', '#f59e0b', '#ec4899'];
-    const chartDatasets = accountsList.map((name, idx) => ({
-      label: name,
-      data: forecastData[name],
-      borderColor: colors[idx % colors.length],
-      borderWidth: 3,
-      tension: 0.15,
-      pointRadius: 4,
-      pointHoverRadius: 6,
-    }));
-
-    const chartData = {
-      labels: years.map(String),
-      datasets: chartDatasets
-    };
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {/* Slider Controls */}
-        <div className="grid-cols-2" style={{ marginBottom: 0 }}>
-          {activeInvestTab === 'RESP' && (
-            <div className="slider-group">
-              <div className="slider-header">
-                <span>RESP Expected YoY Return</span>
-                <span className="slider-value">{respReturnPct}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="15"
-                step="0.5"
-                value={respReturnPct}
-                onChange={e => setRespReturnPct(Number(e.target.value))}
-              />
-            </div>
-          )}
-          {activeInvestTab === 'RRSP' && (
-            <div className="slider-group">
-              <div className="slider-header">
-                <span>RRSP Expected YoY Return</span>
-                <span className="slider-value">{rrspReturnPct}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="15"
-                step="0.5"
-                value={rrspReturnPct}
-                onChange={e => setRrspReturnPct(Number(e.target.value))}
-              />
-            </div>
-          )}
-          {activeInvestTab === 'TFSA' && (
-            <>
-              <div className="slider-group">
-                <div className="slider-header">
-                  <span>Base TFSA ({config.tfsa.base.identifier}) YoY Return</span>
-                  <span className="slider-value">{tfsaBaseReturnPct}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="15"
-                  step="0.5"
-                  value={tfsaBaseReturnPct}
-                  onChange={e => setTfsaBaseReturnPct(Number(e.target.value))}
-                />
-              </div>
-              <div className="slider-group">
-                <div className="slider-header">
-                  <span>Catch-up TFSA ({config.tfsa.catchup.identifier}) YoY Return</span>
-                  <span className="slider-value">{tfsaWsReturnPct}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="15"
-                  step="0.5"
-                  value={tfsaWsReturnPct}
-                  onChange={e => setTfsaWsReturnPct(Number(e.target.value))}
-                />
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Projection Metrics */}
-        <div className="grid-cols-3" style={{ marginBottom: '1rem' }}>
-          <div className="card metric-card">
-            <span className="metric-label">Current Total</span>
-            <span className="metric-value">${totalCurrent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          </div>
-          <div className="card metric-card">
-            <span className="metric-label">Halfway Projection ({currentYear + halfwayOffset})</span>
-            <span className="metric-value">${Math.round(totalHalfway).toLocaleString()}</span>
-          </div>
-          <div className="card metric-card">
-            <span className="metric-label">Final Projection ({currentYear + horizonYears})</span>
-            <span className="metric-value">${Math.round(totalFinal).toLocaleString()}</span>
-          </div>
-        </div>
-
-        {/* Projections Chart */}
-        <div className="card" style={{ height: '380px', position: 'relative' }}>
-          <Line
-            data={chartData}
-            options={{
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: {
-                legend: {
-                  position: 'bottom',
-                  labels: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
-                },
-                tooltip: {
-                  callbacks: {
-                    label: (context) => `${context.dataset.label}: $${Math.round(context.raw as number).toLocaleString()}`
-                  }
-                }
-              },
-              scales: {
-                x: {
-                  grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                  ticks: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
-                },
-                y: {
-                  grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                  ticks: {
-                    color: '#cbd5e1',
-                    font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" },
-                    callback: (val) => `$${Number(val).toLocaleString()}`
-                  }
-                }
-              }
-            }}
-          />
-        </div>
-      </div>
-    );
-  };
-
-  // TFSA YTD details
-  const tfsaCats = config.categories.tfsa_tracking;
-  const dfYtdExpenses = transactions.filter(t => !t.is_income && !t.account_offbudget);
-  const dfTfsa = dfYtdExpenses.filter(t => tfsaCats.includes(t.Category_Name));
-  const tfsaTotal = dfTfsa.reduce((acc, t) => acc + t.amount, 0);
-  const tfsaLimit = config.tfsa.ytd_limit;
-  const tfsaProgressPct = tfsaLimit > 0 ? Math.min(tfsaTotal / tfsaLimit, 1.0) : 0;
-  const tfsaRemaining = Math.max(tfsaLimit - tfsaTotal, 0);
-
-  const tfsaVelocityChart = buildTfsaYtdVelocityChart();
 
   return (
     <div className="app-container">
@@ -847,111 +317,10 @@ export default function App() {
 
       {activePage === 'dashboard' && (
         <>
-          {/* 1. Monthly Overview Grid */}
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Overview</h2>
-          <div className="grid-cols-4">
-            {/* Actual Income */}
-            <div className="card metric-card">
-              <span className="metric-label">
-                Actual Income
-                <span className="info-bubble" data-tooltip="Enter any additional expected income for the month (supports expressions like 500+200)">ⓘ</span>
-              </span>
-              <span className="metric-value">${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <input
-                type="text"
-                className="metric-input"
-                placeholder="Forecasted Income (e.g. 500+200)"
-                value={addInc}
-                onChange={e => setAddInc(e.target.value)}
-              />
-            </div>
-
-            {/* Actual Expenses */}
-            <div className="card metric-card">
-              <span className="metric-label">
-                Actual Expenses
-                <span className="info-bubble" data-tooltip="Enter any additional expected expenses for the month (supports expressions like 100+50)">ⓘ</span>
-              </span>
-              <span className="metric-value">${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <input
-                type="text"
-                className="metric-input"
-                placeholder="Forecasted Expense (e.g. 100+50)"
-                value={addExp}
-                onChange={e => setAddExp(e.target.value)}
-              />
-            </div>
-
-            {/* Actual Net */}
-            <div className="card metric-card">
-              <span className="metric-label">Actual Net</span>
-              <span className="metric-value" style={{ color: netIncome >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className={`metric-delta ${netIncome >= 0 ? 'delta-success' : 'delta-danger'}`}>
-                {totalIncome > 0 ? `${savingsRate.toFixed(1)}% savings rate` : ''}
-              </span>
-            </div>
-
-            {/* Expected Net */}
-            <div className="card metric-card">
-              <span className="metric-label">Expected Net</span>
-              <span className="metric-value" style={{ color: forecastNet >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                ${forecastNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className={`metric-delta ${forecastNet >= 0 ? 'delta-success' : 'delta-danger'}`}>
-                {expectedIncome > 0 ? `${expectedSavingsRate.toFixed(1)}% expected savings` : ''}
-              </span>
-            </div>
-          </div>
-
-          {/* 2. Progress Bars */}
-          <div className="card" style={{ marginBottom: '2rem' }}>
-            {/* Income Progress Bar */}
-            <div className="progress-bar-wrapper">
-              <div className="progress-bar-header" style={{ color: 'var(--color-success)' }}>
-                <span>Income</span>
-                <span>Target: ${Math.round(expectedIncome).toLocaleString()}</span>
-              </div>
-              <div className="progress-bar-track" style={{ borderColor: 'var(--color-success-border)', backgroundColor: 'rgba(16, 185, 129, 0.05)' }}>
-                <div className="progress-bar-fill" style={{ width: `${incPct}%`, backgroundColor: 'var(--color-success)' }}>
-                  <span className="progress-bar-amount">${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Expenses Progress Bar */}
-            <div className="progress-bar-wrapper" style={{ marginBottom: 0 }}>
-              <div className="progress-bar-header" style={{ color: 'var(--color-danger)' }}>
-                <span>Expenses</span>
-                <span>Target: ${Math.round(expectedExpenses).toLocaleString()}</span>
-              </div>
-              <div className="progress-bar-track" style={{ borderColor: 'var(--color-danger-border)', backgroundColor: 'rgba(244, 63, 94, 0.05)' }}>
-                <div className="progress-bar-fill" style={{ width: `${expPct}%`, backgroundColor: 'var(--color-danger)' }}>
-                  <span className="progress-bar-amount">${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <MonthlySpendingOverview selectedMonth={selectedMonth} lastSyncTime={syncStatus?.lastSyncTime || null} />
 
           {/* 3. Envelope Health Checks */}
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Future Envelope Health</h2>
-          <div className="grid-cols-3" style={{ marginBottom: '2rem' }}>
-            {targetMonthsArr.map(item => {
-              const val = underbudget[item.key] || 0;
-              return (
-                <div className="card metric-card" key={item.key} style={{ borderColor: val > 0 ? 'var(--color-warning-border)' : 'var(--color-success-border)' }}>
-                  <span className="metric-label">Underfunded ({item.label})</span>
-                  <span className="metric-value" style={{ color: val > 0 ? 'var(--color-warning)' : 'var(--color-success)' }}>
-                    ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className={`metric-delta ${val > 0 ? 'delta-danger' : 'delta-success'}`}>
-                    {val > 0 ? 'Action Required' : 'Fully Funded'}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <BudgetEnvelopeHealth selectedMonth={selectedMonth} />
 
           {/* 4. Key Category Tracking */}
           {config.categories.budget_tracking.length > 0 && (
@@ -960,7 +329,7 @@ export default function App() {
               <div className="card" style={{ marginBottom: '2rem' }}>
                 {config.categories.budget_tracking.map(cat => {
                   const budgeted = budgets[cat] || 0;
-                  const spent = dfExpenses.filter(t => t.Category_Name === cat).reduce((acc, t) => acc + t.amount, 0);
+                  const spent = dfExpenses.filter(t => t.categoryName === cat).reduce((acc, t) => acc + t.amount, 0);
                   const left = budgeted - spent;
                   
                   const pct = budgeted > 0 ? (spent / budgeted) * 100 : (spent > 0 ? 100 : 0);
@@ -1001,26 +370,7 @@ export default function App() {
             </>
           )}
 
-          {/* 5. Sankey Diagram */}
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Monthly Cashflow</h2>
-          <div className="card" style={{ marginBottom: '2rem' }}>
-            {/* Summarize categories */}
-            {(() => {
-              const incSummary: Record<string, number> = {};
-              dfIncome.forEach(t => {
-                incSummary[t.Category_Name] = (incSummary[t.Category_Name] || 0) + (t.amount * -1);
-              });
-              const expSummary: Record<string, number> = {};
-              dfExpenses.forEach(t => {
-                expSummary[t.Category_Name] = (expSummary[t.Category_Name] || 0) + t.amount;
-              });
-
-              const incArray = Object.entries(incSummary).map(([Category_Name, amount]) => ({ Category_Name, amount }));
-              const expArray = Object.entries(expSummary).map(([Category_Name, amount]) => ({ Category_Name, amount }));
-
-              return <Sankey income={incArray} expenses={expArray} />;
-            })()}
-          </div>
+          <MonthlyCashflowSankey selectedMonth={selectedMonth} lastSyncTime={syncStatus?.lastSyncTime || null} />
 
           {/* 6. Transaction Log */}
           <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Transaction Log</h2>
@@ -1046,10 +396,10 @@ export default function App() {
                       .map(t => (
                         <tr key={t.id}>
                           <td style={{ color: 'var(--color-text-secondary)' }}>{t.date}</td>
-                          <td style={{ fontWeight: 600 }}>{t.Payee_Name}</td>
+                          <td style={{ fontWeight: 600 }}>{t.payeeName}</td>
                           <td>
                             <span style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                              {t.Category_Name}
+                              {t.categoryName}
                             </span>
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--color-danger)' }}>
@@ -1068,115 +418,10 @@ export default function App() {
       {activePage === 'investments' && (
         <>
           {/* 7. TFSA Contributions YTD */}
-          {config.hasTFSA && tfsaCats.length > 0 && (
-            <>
-              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>TFSA Contributions (YTD)</h2>
-              <div className="card" style={{ marginBottom: '2rem' }}>
-                <div className="grid-cols-4" style={{ marginBottom: '1.5rem' }}>
-                  {tfsaCats.map(cat => {
-                    const total = dfTfsa.filter(t => t.Category_Name === cat).reduce((acc, t) => acc + t.amount, 0);
-                    return (
-                      <div className="card metric-card" key={cat} style={{ background: 'rgba(255,255,255,0.02)' }}>
-                        <span className="metric-label">{cat}</span>
-                        <span className="metric-value" style={{ fontSize: '1.4rem' }}>${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    );
-                  })}
-                  <div className="card metric-card" style={{ background: 'var(--color-success-bg)', borderColor: 'var(--color-success-border)' }}>
-                    <span className="metric-label" style={{ color: 'var(--color-success)' }}>Yearly Room Contribution</span>
-                    <span className="metric-value" style={{ fontSize: '1.4rem', color: 'var(--color-success)' }}>${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    <span className="metric-delta delta-success">
-                      {tfsaLimit > 0 ? `$${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} of $${tfsaLimit.toLocaleString(undefined, { minimumFractionDigits: 2 })} (${(tfsaTotal / tfsaLimit * 100).toFixed(1)}%)` : ''}
-                    </span>
-                  </div>
-                  <div className="card metric-card" style={{ background: 'var(--color-success-bg)', borderColor: 'var(--color-success-border)' }}>
-                    <span className="metric-label" style={{ color: 'var(--color-success)' }}>Total Room</span>
-                    <span className="metric-value" style={{ fontSize: '1.4rem', color: 'var(--color-success)' }}>${config.tfsa.total_room.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    <span className="metric-delta delta-success">
-                      {config.tfsa.total_room > 0 ? `$${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} of $${config.tfsa.total_room.toLocaleString(undefined, { minimumFractionDigits: 2 })} (${(tfsaTotal / config.tfsa.total_room * 100).toFixed(1)}%)` : ''}
-                    </span>
-                  </div>
-                </div>
-
-                {/* TFSA Limit Progress Bar */}
-                <div className="progress-bar-wrapper" style={{ marginBottom: '2rem' }}>
-                  <div className="progress-bar-header" style={{ color: 'var(--color-success)' }}>
-                    <span>Remaining Room</span>
-                    <span>Limit: ${tfsaLimit.toLocaleString()}</span>
-                  </div>
-                  <div className="progress-bar-track" style={{ borderColor: 'var(--color-success-border)', backgroundColor: 'rgba(16, 185, 129, 0.05)' }}>
-                    <div className="progress-bar-fill" style={{ width: `${tfsaProgressPct * 100}%`, backgroundColor: 'var(--color-success)' }}>
-                      <span className="progress-bar-amount">${tfsaTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    </div>
-                  </div>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.4rem', fontWeight: 600 }}>
-                    ${tfsaRemaining.toLocaleString(undefined, { minimumFractionDigits: 2 })} remaining of ${tfsaLimit.toLocaleString()} available room
-                  </p>
-                </div>
-
-                {/* YTD Cumulative Line Chart */}
-                {tfsaVelocityChart && (
-                  <div>
-                    <h3 style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem', fontWeight: 700 }}>Contribution Velocity</h3>
-                    <div style={{ height: '300px', position: 'relative' }}>
-                      <Line
-                        data={tfsaVelocityChart}
-                        options={{
-                          responsive: true,
-                          maintainAspectRatio: false,
-                          plugins: {
-                            legend: {
-                              position: 'bottom',
-                              labels: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
-                            },
-                            tooltip: {
-                              callbacks: {
-                                label: (context) => `${context.dataset.label}: $${Math.round(context.raw as number).toLocaleString()}`
-                              }
-                            }
-                          },
-                          scales: {
-                            x: {
-                              grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                              ticks: { color: '#cbd5e1', font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" } }
-                            },
-                            y: {
-                              grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                              ticks: {
-                                color: '#cbd5e1',
-                                font: { family: "'Plus Jakarta Sans', -apple-system, sans-serif" },
-                                callback: (val) => `$${Number(val).toLocaleString()}`
-                              }
-                            }
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+          <TFSAContributionsYTD lastSyncTime={syncStatus?.lastSyncTime || null} />
 
           {/* 8. Investment Forecasts */}
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '1.35rem', marginBottom: '1rem' }}>Investment Forecasts</h2>
-          <div className="tabs-container">
-            {([
-              config.hasRESP && 'RESP',
-              config.hasRRSP && 'RRSP',
-              config.hasTFSA && 'TFSA'
-            ].filter(Boolean) as ('RESP' | 'RRSP' | 'TFSA')[]).map(tab => (
-              <button
-                key={tab}
-                className={`tab-button ${activeInvestTab === tab ? 'active' : ''}`}
-                onClick={() => setActiveInvestTab(tab)}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          {renderInvestmentProjections()}
+          <InvestmentProjectionsDashboard lastSyncTime={syncStatus?.lastSyncTime || null} />
         </>
       )}
     </div>
