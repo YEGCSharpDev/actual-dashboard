@@ -75,6 +75,23 @@ async function _doSyncInternal(): Promise<void> {
   } catch (err: any) {
     syncState.syncError = err.message || String(err);
     console.error("Sync failed:", syncState.syncError);
+    
+    // Future-proofing: Auto-detect schema mismatch and update the API client
+    if (syncState.syncError && (syncState.syncError.includes('invalid-schema') || syncState.syncError.includes('no such column'))) {
+      console.error("===============================================================");
+      console.error("FATAL: Schema conflict detected with the Actual Budget server.");
+      console.error("Attempting to auto-heal by updating @actual-app/api to latest...");
+      console.error("===============================================================");
+      try {
+        const { execSync } = await import('child_process');
+        execSync('npm install @actual-app/api@latest', { stdio: 'inherit' });
+        console.error("Successfully updated @actual-app/api. Restarting server...");
+        process.exit(1); // Exit to allow process manager/Docker to restart the service with the new package
+      } catch (updateErr) {
+        console.error("Failed to auto-update @actual-app/api. Please run 'npm install @actual-app/api@latest' manually.", updateErr);
+      }
+    }
+
     try {
       await api.shutdown();
     } catch (e) {}

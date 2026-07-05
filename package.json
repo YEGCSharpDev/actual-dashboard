@@ -15,7 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@actual-app/api": "^26.5.2",
+    "@actual-app/api": "^26.7.0",
     "adm-zip": "^0.5.17",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
