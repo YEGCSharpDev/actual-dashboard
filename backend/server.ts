@@ -198,7 +198,7 @@ const frontendDistPath = path.join(process.cwd(), 'frontend', 'dist');
 if (fs.existsSync(frontendDistPath)) {
   console.log(`Serving static frontend from ${frontendDistPath}`);
   app.use(express.static(frontendDistPath));
-  app.get('*', (req, res) => {
+  app.get('*path', (req, res) => {
     res.sendFile(path.join(frontendDistPath, 'index.html'));
   });
 } else {
