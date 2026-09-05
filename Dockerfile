@@ -1,7 +1,7 @@
 # ==========================================
 # STAGE 1: BUILDER
 # ==========================================
-FROM node:20-alpine AS builder
+FROM node:24-trixie-slim AS builder
 
 # Install build dependencies for native C++ modules (like better-sqlite3 and sqlite3)
 RUN apk add --no-cache python3 make g++ py3-setuptools
@@ -30,7 +30,7 @@ RUN npm prune --omit=dev
 # ==========================================
 # STAGE 2: RUNNER
 # ==========================================
-FROM node:20-alpine AS runner
+FROM node:24-trixie-slim AS runner
 
 WORKDIR /app
 
